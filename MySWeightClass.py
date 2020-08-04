@@ -23,7 +23,8 @@ class SWeight():
                  method='summation',
                  compnames=None,
                  alphas=None,
-                 rfobs=[]
+                 rfobs=[],
+                 checks=True
                 ):
 
         self.allowed_methods = ['summation','integration','refit','subhess','tsplot','roofit']
@@ -102,7 +103,7 @@ class SWeight():
           self.roofitw = [ InterpolatedUnivariateSpline( *self.roofitweights[:,[0,i+1]].T, k=3 ) for i in range(self.ncomps) ]
 
         # print checks
-        self.printChecks()
+        if checks: self.printChecks()
 
     def computeWMatrix(self):
         self.Wkl = np.zeros( (self.ncomps,self.ncomps) )
@@ -160,22 +161,23 @@ class SWeight():
         else:
             return sum( [self.alphas[i,icomp] * self.pdfs[i].pdf(*args)/self.pdfnorms[i] for i in range(self.ncomps)] ) / sum( [self.yields[i] * self.pdfs[i].pdf(*args)/self.pdfnorms[i] for i in range(self.ncomps)] )
 
-    def makeWeightPlot(self, axis=None):
+    def makeWeightPlot(self, axis=None, dopts=['r','b','g','m','c','y']):
 
         if self.ndiscvars!=1:
             print('WARNING - I dont know how to plot this')
             return None
 
-        dopts = ['r-','b-','g-','m-']
+        while len(dopts)<self.ncomps:
+          dopts.append('b')
 
         ax = axis or plt.gca()
 
         x = np.linspace( *self.discvarranges[0], 100 )
 
         for comp in range(self.ncomps):
-            ax.plot( x, self.getWeight(comp,x), dopts[comp], label='$w_{{{0}}}$'.format(self.compnames[comp]) )
+            ax.plot( x, self.getWeight(comp,x), color=dopts[comp], linewidth=2, label='$w_{{{0}}}$'.format(self.compnames[comp]) )
 
-        ax.plot( x, sum( [ self.getWeight(c,x) for c in range(self.ncomps) ] ), 'k-', label='$\sum_i w_{i}$')
+        ax.plot( x, sum( [ self.getWeight(c,x) for c in range(self.ncomps) ] ), 'k-', linewidth=3, label='$\sum_i w_{i}$')
 
         ax.legend()
 
