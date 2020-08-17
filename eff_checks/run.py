@@ -1,0 +1,563 @@
+## NOTES ##
+# total pdf (no eff)
+# f(m,t) = z gs(m)hs(t) + (1-z) gb(m)hb(t)
+
+# define g(m) as just the mass part of this
+# g(m) = int f(m,t) dt = z gs(m) + (1-z) gb(m)
+
+# eff pdf
+# e(m,t)
+
+# we define the eff and pdf product as
+# f'(m,t) = e(m,t) f(m,t) / Ne
+# where Ne is such that f'(m,t) integrates to unity
+# so that
+# f'(m,t) = e'(m,t)f(m,t)
+
+## pass arguments
+from argparse import ArgumentParser
+parser = ArgumentParser()
+parser.add_argument("-d","--dir"    , default='figs'                    , help='Directory to store plots in')
+parser.add_argument("-D","--details", default=False, action="store_true", help='Rerun all the little details')
+parser.add_argument("-r","--regen"  , default=-1, type=int              , help='Regenerate toy (with this number of events)')
+parser.add_argument("-f","--refit"  , default=False, action="store_true", help='Rerun the weighted fit')
+parser.add_argument("-s","--smooth" , default=False, action="store_true", help='Smooth the weights')
+opts = parser.parse_args()
+
+import numpy as np
+from scipy.stats import norm, expon, powerlaw, multivariate_normal, chi2
+from scipy.integrate import quad, nquad
+from scipy.linalg import solve
+from scipy.interpolate import InterpolatedUnivariateSpline
+from scipy.signal import savgol_filter
+from matplotlib import pyplot as plt
+from matplotlib import cm
+import pandas as pd
+import boost_histogram as bh
+from iminuit import Minuit
+import pickle
+
+# directory for plots
+import os
+os.system('mkdir -p %s'%opts.dir)
+
+# set random seed
+np.random.seed(1)
+
+## SETUP some variables ##
+mrange = (5000,5600)
+trange = (0,10)
+mass = np.linspace(*mrange,100)
+time = np.linspace(*trange,100)
+
+# make my efficiency model (it's not really a pdf but just a mapping)
+def eff_pdf(m, t, a=1.1, b=0.05, loc=-0.02):
+  # get m into range 0-1
+  mscl = (m - mrange[0])/(mrange[1]-mrange[0])
+  ascl = a + b*mscl
+  f = ascl*(t-loc)**(ascl-1.)
+  # scale it so that the max is 1. which happens at trange[1], mrange[1]
+  mx = (a+b)*(trange[1]-loc)**(a+b-1.)
+  return f/mx
+
+print('Drawing efficiency map')
+# draw the efficiency mapping in 2D
+fig, ax = plt.subplots(1,1,figsize=(6,4))
+x, y = np.meshgrid(mass,time)
+im = ax.contourf(x, y, eff_pdf(x,y) )
+cb = fig.colorbar(im, ax=ax)
+ax.set_xlabel('mass')
+ax.set_ylabel('decay time')
+cb.set_label('efficiency')
+fig.tight_layout()
+fig.savefig('%s/eff_map_2d.pdf'%opts.dir)
+
+# draw the efficiency mapping in 1D
+fig, ax = plt.subplots(1,2,figsize=(12,4))
+
+for mval in np.linspace(*mrange, 5):
+  ax[0].plot( time, eff_pdf(mval, time), label='$m=%.0f$'%mval )
+ax[0].set_xlabel('decay time')
+ax[0].set_ylabel('efficiency')
+ax[0].legend()
+
+for tval in np.linspace(*trange, 5):
+  ax[1].plot( mass, eff_pdf(mass,tval), label='$t=%.0f$'%tval )
+ax[1].set_xlabel('mass')
+ax[1].set_ylabel('efficiency')
+ax[1].legend()
+
+fig.tight_layout()
+fig.savefig('%s/eff_maps_1d.pdf'%opts.dir)
+
+## NOW DEFINE THE PDFS gs, gb, hs, hb and z
+fit_pars = { 'gs': (5280, 30),
+             'gb': (400,),
+             'hs': (2,),
+             'hb': (0,3),
+             'z' : 0.25
+            }
+
+def mt_pdf(m, t, mproj=False, tproj=False, sonly=False, bonly=False, **kwargs  ):
+
+  # declare pdfs
+  gsm = norm(*kwargs['gs'])
+  gbm = expon(mrange[0], *kwargs['gb'])
+  hst = expon(trange[0], *kwargs['hs'])
+  hbt = norm(*kwargs['hb'])
+  zf  = kwargs['z']
+
+  # compute normalisations for our range
+  gsmn = np.diff( gsm.cdf(mrange) )
+  gbmn = np.diff( gbm.cdf(mrange) )
+  hstn = np.diff( hst.cdf(trange) )
+  hbtn = np.diff( hbt.cdf(trange) )
+
+  if mproj:
+    hstv = 1.
+    hbtv = 1.
+  else:
+    hstv = hst.pdf(t)/hstn
+    hbtv = hbt.pdf(t)/hbtn
+
+  if tproj:
+    gsmv = 1.
+    gbmv = 1.
+  else:
+    gsmv = gsm.pdf(m)/gsmn
+    gbmv = gbm.pdf(m)/gbmn
+
+  sig = zf*gsmv*hstv
+  bkg = (1-zf)*gbmv*hbtv
+
+  if sonly: sig=0
+  if bonly: bkg=0
+
+  return sig + bkg
+
+def fmt(m=None, t=None, mproj=False, tproj=False, sonly=False, bonly=False):
+  return mt_pdf(m,t,mproj,tproj,sonly,bonly,**fit_pars)
+
+print('Drawing the nominal f(m,t) PDF')
+## draw the f(m,t) pdf
+fig, ax = plt.subplots(1, 3, figsize=(18,4))
+im = ax[0].contourf( x, y, fmt(x,y) )
+cb = fig.colorbar(im, ax=ax[0])
+ax[0].set_xlabel('mass')
+ax[0].set_ylabel('decay time')
+cb.set_label('arbitary units')
+
+ax[1].plot( mass, fmt(m=mass, mproj=True), 'k-', label='Total PDF - $z g_{s}(m) + (1-z)g_{b}(m)$'  )
+ax[1].plot( mass, fmt(m=mass, mproj=True, sonly=True), 'r--', label='Signal - $z g_{s}(m)$' )
+ax[1].plot( mass, fmt(m=mass, mproj=True, bonly=True), 'b--', label='Background - $(1-z)g_{b}(m)$' )
+ax[1].set_xlabel('mass')
+ax[1].set_ylabel('arbitary units')
+ax[1].legend()
+
+ax[2].plot( time, fmt(t=time, tproj=True), 'k-', label='Total PDF - $z h_{s}(t) + (1-z)h_{b}(t)$' )
+ax[2].plot( time, fmt(t=time, tproj=True, sonly=True), 'r--', label='Signal - $z h_{s}(t)$' )
+ax[2].plot( time, fmt(t=time, tproj=True, bonly=True), 'b--', label='Background - $(1-z) h_{b}(t)$')
+ax[2].set_xlabel('decay time')
+ax[2].set_ylabel('arbitary units')
+ax[2].legend()
+
+fig.tight_layout()
+fig.savefig('%s/fmt_pdfs.pdf'%opts.dir)
+
+#### WITHOUT HAVING TO REDO INTEGRATION ####
+# Integral of f(m,t) pdf    =  1.0000000000000002 +/- 6.255787141629912e-11
+# Integral of e(m,t) map    =  4933.334318308923 +/- 1.223480014124191e-07
+# Integral of e(m,t)*f(m,t) =  0.7297241471298931 +/- 7.22546524050093e-11
+# Integral of f'(m,t) pdf   =  1.0 +/- 9.901639598157481e-11
+
+if opts.details:
+  ## now check the integral
+  fmt_integral = nquad( fmt, (mrange,trange) )
+  eff_integral = nquad( eff_pdf, (mrange,trange) )
+  print('Integral of f(m,t) pdf    = ', fmt_integral[0] , '+/-', fmt_integral[1])
+  print('Integral of e(m,t) map    = ', eff_integral[0] , '+/-', eff_integral[1])
+  assert( abs( fmt_integral[0] - 1. ) < 5*fmt_integral[1] )
+
+  ## now we need to get the Ne normalisation factor such that f' integrates to unity
+  tmpf = lambda m,t: eff_pdf(m,t)*fmt(m,t)
+  tmpint = nquad( tmpf, (mrange,trange) )
+  print('Integral of e(m,t)*f(m,t) = ', tmpint[0], '+/-', tmpint[1])
+else:
+  tmpint = (0.7297241471298931,)
+
+## SET to consistent notation with the Paper
+eps = eff_pdf
+Ne  = tmpint[0]
+
+def epsprime(m,t):
+  return eff_pdf(m,t)/Ne
+
+def fmtprime(m,t, sonly=False, bonly=False):
+  return epsprime(m,t)*fmt(m,t,sonly=sonly,bonly=bonly)
+
+## now check the integral of fmtprime
+if opts.details:
+  fmtprime_integral = nquad(fmtprime, (mrange,trange) )
+  print('Integral of f\'(m,t) pdf   = ', fmtprime_integral[0] , '+/-', fmtprime_integral[1])
+  assert( abs( fmtprime_integral[0] - 1. ) < 5*fmtprime_integral[1] )
+
+## now useful to define the integral over only one dimension at a time
+# i think need both orderings
+def fmtpm(m, t, sonly=False, bonly=False):
+  return epsprime(m,t)*fmt(m,t,sonly=sonly,bonly=bonly)
+
+def fmtpt(t, m, sonly=False, bonly=False):
+  return epsprime(m,t)*fmt(m,t,sonly=sonly,bonly=bonly)
+
+def fmtp_mproj(m, sonly=False, bonly=False):
+  return quad( fmtpt, *trange, args=(m,sonly,bonly))[0]
+
+def fmtp_tproj(t, sonly=False, bonly=False):
+  return quad( fmtpm, *mrange, args=(t,sonly,bonly))[0]
+
+## later on we want the inverse of these as well
+def fmtoepm(m, t, sonly=False, bonly=False):
+  return fmt(m,t,sonly=sonly,bonly=bonly)/epsprime(m,t)
+
+def fmtoept(t, m, sonly=False, bonly=False):
+  return fmt(m,t,sonly=sonly,bonly=bonly)/epsprime(m,t)
+
+def fmtoep_mproj(m, sonly=False, bonly=False):
+  return quad( fmtoept, *trange, args=(m,sonly,bonly))[0]
+
+def fmtoep_tproj(t, sonly=False, bonly=False):
+  return quad( fmtoepm, *mrange, args=(t,sonly,bonly))[0]
+
+vec_fmtp_mproj = np.vectorize(fmtp_mproj)
+vec_fmtp_tproj = np.vectorize(fmtp_tproj)
+vec_fmtoep_mproj = np.vectorize(fmtoep_mproj)
+vec_fmtoep_tproj = np.vectorize(fmtoep_mproj)
+
+def fmtp(m=None, t=None, mproj=False, tproj=False, sonly=False, bonly=False):
+  if mproj:
+    return vec_fmtp_mproj(m, sonly=sonly, bonly=bonly)
+  if tproj:
+    return vec_fmtp_tproj(t, sonly=sonly, bonly=bonly)
+  return fmtprime(m, t, sonly=sonly, bonly=bonly)
+
+print('Drawing the product PDF f\'(m,t)')
+## now we want to plot the pdf with the efficiency in it
+## i.e draw the f'(m,t) pdf
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.view_init(35,60)
+ax.plot_wireframe( x, y, fmtprime(x,y), colors='k', rstride=4, cstride=4, zorder=3 )
+zlim = (ax.get_zlim()[0] - 0.1*ax.get_zlim()[1], ax.get_zlim()[1])
+xp = ax.contour ( x, y, fmtprime(x,y), zdir='x', offset=mrange[0], cmap=cm.jet, zorder=2)
+yp = ax.contour ( x, y, fmtprime(x,y), zdir='y', offset=trange[0], cmap=cm.jet, zorder=1)
+ax.contourf( x, y, fmtprime(x,y), zdir='z', offset=zlim[0]  , cmap=cm.coolwarm, zorder=0)
+ax.set_xlabel('mass')
+ax.set_ylabel('time')
+ax.set_zlabel('arbitary units')
+ax.set_zlim(zlim[0], zlim[1])
+fig.tight_layout()
+fig.savefig('%s/fmtprime_pdf.pdf'%opts.dir)
+
+## this bit is very slow attempts to draw the projections which requires lots of numerical integration
+if opts.details:
+
+  print('Drawing the product PDF projections')
+  fig, ax = plt.subplots(1, 3, figsize=(18,4))
+  im = ax[0].contourf( x, y, fmtp(x,y) )
+  cb = fig.colorbar(im, ax=ax[0])
+  ax[0].set_xlabel('mass')
+  ax[0].set_ylabel('decay time')
+  cb.set_label('arbitary units')
+
+  ax[1].plot( mass, fmtp(m=mass, mproj=True), 'k-', label='Total PDF - $\epsilon\'(m,t)(z g_{s}(m) + (1-z)g_{b}(m))$'  )
+  ax[1].plot( mass, fmtp(m=mass, mproj=True, sonly=True), 'r--', label='Signal - $\epsilon\'(m,t)(z g_{s}(m))$' )
+  ax[1].plot( mass, fmtp(m=mass, mproj=True, bonly=True), 'b--', label='Background - $\epsilon\'(m,t)((1-z)g_{b}(m))$' )
+  ax[1].set_xlabel('mass')
+  ax[1].set_ylabel('arbitary units')
+  ax[1].legend()
+
+  ax[2].plot( time, fmtp(t=time, tproj=True), 'k-', label='Total PDF - $\epsilon\'(m,t)(z h_{s}(t) + (1-z)h_{b}(t))$' )
+  ax[2].plot( time, fmtp(t=time, tproj=True, sonly=True), 'r--', label='Signal - $\epsilon\'(m,t)(z h_{s}(t))$' )
+  ax[2].plot( time, fmtp(t=time, tproj=True, bonly=True), 'b--', label='Background - $\epsilon\'(m,t)((1-z) h_{b}(t))$')
+  ax[2].set_xlabel('decay time')
+  ax[2].set_ylabel('arbitary units')
+  ax[2].legend()
+
+  fig.tight_layout()
+  fig.savefig('%s/fmtp_pdfs.pdf'%opts.dir)
+
+## Now we can generate a toy
+if opts.regen>0:
+  print('Generating a toy with', opts.regen, 'events')
+
+  # nevents
+  truth_n_tot = opts.regen
+  truth_n_sig = int( fit_pars['z']*truth_n_tot )
+  truth_n_bkg = truth_n_tot - truth_n_sig
+
+  # declare pdfs
+  gsm = norm(*fit_pars['gs'])
+  gbm = expon(mrange[0], *fit_pars['gb'])
+  hst = expon(trange[0], *fit_pars['hs'])
+  hbt = norm(*fit_pars['hb'])
+
+  data = pd.DataFrame(columns=['mass','time','ctrl'])
+  data = data.astype( {'mass':float,'time':float,'ctrl':int} )
+
+  # fill sig vals
+  nsig = 0
+  while nsig < truth_n_sig:
+    mval = gsm.rvs()
+    tval = hst.rvs()
+    if mval > mrange[1] or mval < mrange[0] or tval > trange[1] or tval < trange[0]: continue
+    ## now we need to accept-reject based on the efficiency
+    if np.random.uniform() > eff_pdf(mval,tval): continue
+    data = data.append( {'mass':mval, 'time': tval, 'ctrl': 0}, ignore_index=True )
+    nsig += 1
+
+  nbkg = 0
+  while nbkg < truth_n_bkg:
+    mval = gbm.rvs()
+    tval = hbt.rvs()
+    if mval > mrange[1] or mval < mrange[0] or tval > trange[1] or tval < trange[0]: continue
+    ## now we need to accept-reject based on the efficiency
+    if np.random.uniform() > eff_pdf(mval,tval): continue
+    data = data.append( {'mass':mval, 'time': tval, 'ctrl': 1}, ignore_index=True )
+    nbkg += 1
+
+  # check events are all in range
+  data = data[ (data['mass']>mrange[0]) & (data['mass']<mrange[1]) & (data['time']>trange[0]) & (data['time']<trange[1]) ]
+  data.to_pickle("toy.pkl")
+
+# read the toy from file
+data = pd.read_pickle("toy.pkl")
+print( data )
+
+## now should visualise the toy
+
+# bin the toy data
+mbins = 50
+tbins = 50
+dhist = bh.Histogram( bh.axis.Regular(mbins,*mrange), bh.axis.Regular(tbins,*trange) )
+dhist.fill( data['mass'].to_numpy(), data['time'].to_numpy() )
+
+# plot the toy data
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.view_init(35,60)
+dX, dY = np.meshgrid( dhist.axes[0].centers, dhist.axes[1].centers )
+ax.scatter( dX, dY, dhist.view().T )
+pnorm = len(data) * (mrange[1]-mrange[0])/mbins * (trange[1]-trange[0])/tbins
+ax.plot_wireframe( x, y, pnorm*fmtprime(x,y), colors='k', rstride=4, cstride=4, zorder=3 )
+fig.savefig('%s/fmtprime_pdf_with_toys.pdf'%opts.dir)
+
+## this bit is very slow attempts to draw the projections with the toy
+if opts.details:
+
+  print('Drawing the product PDF projections with the toy')
+  fig, ax = plt.subplots(1, 2, figsize=(12,4))
+
+  # hist
+  dhistx = dhist.project(0)
+  ax[0].errorbar( dhistx.axes[0].centers, dhistx.view(), yerr=dhistx.view()**0.5, xerr=0.5*( dhistx.axes[0].edges[1:] - dhistx.axes[0].edges[:-1]), fmt='ko', ms=4. )
+  xnorm = len(data) * (mrange[1]-mrange[0])/mbins
+
+  # pdf
+  ax[0].plot( mass, xnorm*fmtp(m=mass, mproj=True), 'k-', label='Total PDF - $\epsilon\'(m,t)(z g_{s}(m) + (1-z)g_{b}(m))$'  )
+  ax[0].plot( mass, xnorm*fmtp(m=mass, mproj=True, sonly=True), 'r--', label='Signal - $\epsilon\'(m,t)(z g_{s}(m))$' )
+  ax[0].plot( mass, xnorm*fmtp(m=mass, mproj=True, bonly=True), 'b--', label='Background - $\epsilon\'(m,t)((1-z)g_{b}(m))$' )
+  ax[0].set_xlabel('mass')
+  ax[0].set_ylabel('arbitary units')
+  ax[0].legend()
+
+  # hist
+  dhisty = dhist.project(1)
+  ax[1].errorbar( dhisty.axes[0].centers, dhisty.view(), yerr=dhisty.view()**0.5, xerr=0.5*( dhisty.axes[0].edges[1:] - dhisty.axes[0].edges[:-1]), fmt='ko', ms=4. )
+  ynorm = len(data) * (trange[1]-trange[0])/tbins
+
+  # pdf
+  ax[1].plot( time, ynorm*fmtp(t=time, tproj=True), 'k-', label='Total PDF - $\epsilon\'(m,t)(z h_{s}(t) + (1-z)h_{b}(t))$' )
+  ax[1].plot( time, ynorm*fmtp(t=time, tproj=True, sonly=True), 'r--', label='Signal - $\epsilon\'(m,t)(z h_{s}(t))$' )
+  ax[1].plot( time, ynorm*fmtp(t=time, tproj=True, bonly=True), 'b--', label='Background - $\epsilon\'(m,t)((1-z) h_{b}(t))$')
+  ax[1].set_xlabel('decay time')
+  ax[1].set_ylabel('arbitary units')
+  ax[1].legend()
+
+  fig.tight_layout()
+  fig.savefig('%s/fmtp_pdfs_with_toy.pdf'%opts.dir)
+
+### Now attempt the weighted fit to estimate zhat and ghats(m)
+### This is Eq 36 in the paper
+### ie minimise the sum of studentized residuals
+
+## bin the mass
+mbins = 100
+# a normal unweighted histogram so we know the event count in each bin
+dmhist = bh.Histogram( bh.axis.Regular(mbins,*mrange) )
+dmhist.fill( data['mass'].to_numpy() )
+# get my estimate for \hat{N}_eps
+N = len(data)
+hatNe = N / np.sum( 1./eff_pdf(data['mass'].to_numpy(), data['time'].to_numpy()) )
+print(N, hatNe, Ne)
+print('Estimate of hatNe:', hatNe, 'vs true Ne', Ne)
+# a weighted histogram that can return us the sum of weights or the sum of squared weights in each bin
+mhist = bh.Histogram( bh.axis.Regular(mbins,*mrange), storage=bh.storage.Weight() )
+mhist.fill( data['mass'].to_numpy(), weight=hatNe/eff_pdf(data['mass'].to_numpy(), data['time'].to_numpy()) )
+
+# a function to return us the weighted function for a given value
+# looks up the bin. integrates the pdf in the bin
+# scales it by the number of events if needed
+def weighted_func(m, z, mean, sigma, slope, normalised=False, sonly=False, bonly=False ):
+  gsmin = norm(mean,sigma)
+  gbmin = expon(mrange[0],slope)
+  gsnorm = np.diff( gsmin.cdf(mrange) )[0]
+  gbnorm = np.diff( gbmin.cdf(mrange) )[0]
+  edges   = mhist.axes[0].edges
+  centers = mhist.axes[0].centers
+  ibin = mhist.axes[0].index(m)
+  lx = mhist.axes[0].edges[ibin]
+  hx = mhist.axes[0].edges[ibin+1]
+  Ps = np.diff( gsmin.cdf((lx,hx)) )[0] / gsnorm
+  Pb = np.diff( gbmin.cdf((lx,hx)) )[0] / gbnorm
+  sig = z*Ps
+  bkg = (1-z)*Pb
+  if sonly: bkg = 0.
+  if bonly: sig = 0.
+  pred = sig + bkg
+  if not normalised: pred *= N
+  return pred
+
+# weighted least squares (sum of studentized residuals)
+def weighted_least_squares(z, mean, sigma, slope):
+  Q = 0
+  for ibin, cx in enumerate(mhist.axes[0].centers):
+    pred = weighted_func( cx, z, mean, sigma, slope )
+    obs = mhist.view().value[ibin]
+    var = mhist.view().variance[ibin]
+    resid = (pred-obs)**2 / var
+    Q += resid
+  return Q
+
+mi = Minuit( weighted_least_squares, z=fit_pars['z'], mean=fit_pars['gs'][0], sigma=fit_pars['gs'][1], slope=fit_pars['gb'][0], pedantic=False )
+
+if opts.refit:
+  mi.migrad()
+  mi.hesse()
+
+  outf = open('fitres.pkl','wb')
+  pickle.dump( mi.fitarg, outf)
+  outf.close()
+
+inf = open('fitres.pkl','rb')
+fitarg = pickle.load(inf)
+inf.close()
+mi = Minuit( weighted_least_squares, **fitarg, pedantic=False )
+print(mi.get_param_states())
+#print(mi.params)
+
+## Check the result of the weighted fit
+## by plotting the shape histogram against the data
+phist = bh.Histogram( bh.axis.Regular(mbins,*mrange) )
+for ibin, cx in enumerate(phist.axes[0].centers):
+  phist[ibin] = weighted_func(cx, **mi.values)
+
+fig, ax = plt.subplots(1,1, figsize=(6,4) )
+ax.errorbar( mhist.axes[0].centers, mhist.view().value, yerr=mhist.view().variance**0.5, xerr=0.5*( mhist.axes[0].edges[1:] - mhist.axes[0].edges[:-1]), fmt='ko', markersize=4. )
+ax.step( phist.axes[0].centers, phist.view(), where='mid' )
+fig.savefig( '%s/ghat_fit.pdf'%opts.dir )
+
+## Plot of q_k
+# and compare to our knowledge of the truth f(m,t)/eps'(m,t)
+## we could also consider a fit for a q'(m) here to then use Eq.30
+if opts.details:
+  fig, ax = plt.subplots(1,1,figsize=(6,4))
+  bin_width = (mrange[1]-mrange[0])/mbins
+  q_k = mhist.view().variance/len(data) / bin_width
+  ax.plot( mhist.axes[0].centers, q_k, label='q(k)' )
+  fmtoep_proj = vec_fmtp_mproj(mhist.axes[0].centers)
+  # this bit is very slow as needs integration
+  ax.plot( mhist.axes[0].centers, fmtoep_proj, label='$\int dt f(m,t) / \epsilon\'(m,t)$' )
+  ax.set_xlabel('mass')
+  ax.set_ylabel('arbitary units')
+  ax.legend()
+  fig.tight_layout()
+  fig.savefig( '%s/qk_hist.pdf'%opts.dir )
+
+# Now extract Weights according to Eq. 38
+def ghat_prod(m, i, j,  z, mean, sigma, slope):
+  assert(i==0 or i==1)
+  assert(j==0 or j==1)
+  gs = norm(mean,sigma)
+  gb = expon(mrange[0],slope)
+  gi = gs if i==0 else gb
+  gj = gs if j==0 else gb
+  ginorm = np.diff( gi.cdf(mrange) )[0]
+  gjnorm = np.diff( gj.cdf(mrange) )[0]
+  prod = lambda m: gi.pdf(m)/ginorm * gj.pdf(m)/gjnorm
+  ibin = mhist.axes[0].index(m)
+  lx = mhist.axes[0].edges[ibin]
+  hx = mhist.axes[0].edges[ibin+1]
+  integral = quad(prod, lx, hx)[0]
+  return integral
+
+def Wpij(i,j):
+  assert(i==0 or i==1)
+  assert(j==0 or j==1)
+  s = 0.
+  for ibin, cx in enumerate(mhist.axes[0].centers):
+    gigj = ghat_prod(cx, i, j, **mi.values)
+    s += gigj / mhist.view().variance[ibin]
+  bin_width = (mrange[1]-mrange[0])/mbins
+  return len(data)*bin_width*s
+
+# get the W-matrix
+Wxy = np.array( [ [Wpij(0,0), Wpij(0,1)], [Wpij(1,0), Wpij(1,1)] ] )
+
+# solve for the alpha matrix
+sol = np.identity( len(Wxy) )
+alphas = solve( Wxy, sol, assume_a='pos' )
+
+print('W-matrix:')
+print('\t', str(Wxy).replace('\n','\n\t'))
+print('alpha-matrix')
+print('\t', str(alphas).replace('\n','\n\t'))
+
+# define a weight function
+def sweight(m, t, icomp, z, mean, sigma, slope):
+  gs = norm(mean,sigma)
+  gb = expon(mrange[0],slope)
+  gsnorm = np.diff( gs.cdf(mrange) )[0]
+  gbnorm = np.diff( gb.cdf(mrange) )[0]
+  alph_vec = alphas[icomp]
+  numerator = alph_vec[0]*gs.pdf(m)/gsnorm + alph_vec[1]*gb.pdf(m)/gbnorm
+  denominator = (eff_pdf(m,t)/hatNe)*( z*gs.pdf(m)/gsnorm + (1-z)*gb.pdf(m)/gbnorm)
+  return numerator / denominator
+
+data.insert(2, 'sw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 0, **mi.values ) )
+data.insert(3, 'bw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 1, **mi.values ) )
+
+#print(data)
+
+sdata = data.sort_values( by=['mass'] )
+
+# smooth the weights
+swS = savgol_filter( sdata['sw'].to_numpy(), int(len(data)/20)+1, 3)
+bwS = savgol_filter( sdata['bw'].to_numpy(), int(len(data)/20)+1, 3)
+sw = InterpolatedUnivariateSpline( sdata['mass'], swS, k=3 )
+bw = InterpolatedUnivariateSpline( sdata['mass'], bwS, k=3 )
+
+# plot the weights
+fig, ax = plt.subplots(1,2, figsize=(12,4))
+ax[0].plot( sdata['mass'].to_numpy(), sdata['sw'].to_numpy(), 'r--')
+ax[0].plot( sdata['mass'].to_numpy(), sdata['bw'].to_numpy(), 'b--')
+ax[0].plot( sdata['mass'].to_numpy(), sdata['sw'].to_numpy() + sdata['bw'].to_numpy(), 'k-')
+ax[0].set_title('Raw weights')
+ax[1].plot(mass, sw(mass), 'r--')
+ax[1].plot(mass, bw(mass), 'b--')
+ax[1].plot(mass, sw(mass)+bw(mass), 'k-')
+ax[1].set_title('Smoothed weights')
+fig.tight_layout()
+fig.savefig('%s/weights.pdf'%opts.dir)
+
+print('Finished')
+plt.show()
