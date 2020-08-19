@@ -51,7 +51,7 @@ mass = np.linspace(*mrange,100)
 time = np.linspace(*trange,100)
 
 # make my efficiency model (it's not really a pdf but just a mapping)
-def eff_pdf(m, t, a=1.1, b=0.05, loc=-0.02):
+def eff_pdf(m, t, a=1.2, b=0.5, loc=-0.5):
   # get m into range 0-1
   mscl = (m - mrange[0])/(mrange[1]-mrange[0])
   ascl = a + b*mscl
@@ -130,8 +130,8 @@ def mt_pdf(m, t, mproj=False, tproj=False, sonly=False, bonly=False, **kwargs  )
   sig = zf*gsmv*hstv
   bkg = (1-zf)*gbmv*hbtv
 
-  if sonly: sig=0
-  if bonly: bkg=0
+  if sonly: bkg=0
+  if bonly: sig=0
 
   return sig + bkg
 
@@ -183,7 +183,8 @@ if opts.details:
   tmpint = nquad( tmpf, (mrange,trange) )
   print('Integral of e(m,t)*f(m,t) = ', tmpint[0], '+/-', tmpint[1])
 else:
-  tmpint = (0.7297241471298931,)
+  #tmpint = (0.7297241471298931,)
+  tmpint = (0.23156988562768446,)
 
 ## SET to consistent notation with the Paper
 eps = eff_pdf
@@ -391,7 +392,7 @@ if opts.details:
 ### ie minimise the sum of studentized residuals
 
 ## bin the mass
-mbins = 100
+mbins = 400
 # a normal unweighted histogram so we know the event count in each bin
 dmhist = bh.Histogram( bh.axis.Regular(mbins,*mrange) )
 dmhist.fill( data['mass'].to_numpy() )
@@ -452,7 +453,7 @@ inf = open('fitres.pkl','rb')
 fitarg = pickle.load(inf)
 inf.close()
 mi = Minuit( weighted_least_squares, **fitarg, pedantic=False )
-print(mi.get_param_states())
+print(mi.params)
 #print(mi.params)
 
 ## Check the result of the weighted fit
@@ -474,7 +475,7 @@ if opts.details:
   bin_width = (mrange[1]-mrange[0])/mbins
   q_k = mhist.view().variance/len(data) / bin_width
   ax.plot( mhist.axes[0].centers, q_k, label='q(k)' )
-  fmtoep_proj = vec_fmtp_mproj(mhist.axes[0].centers)
+  fmtoep_proj = vec_fmtoep_mproj(mhist.axes[0].centers)
   # this bit is very slow as needs integration
   ax.plot( mhist.axes[0].centers, fmtoep_proj, label='$\int dt f(m,t) / \epsilon\'(m,t)$' )
   ax.set_xlabel('mass')
@@ -558,6 +559,47 @@ ax[1].plot(mass, sw(mass)+bw(mass), 'k-')
 ax[1].set_title('Smoothed weights')
 fig.tight_layout()
 fig.savefig('%s/weights.pdf'%opts.dir)
+
+# fit the weighted control (time) distribution
+def tnll(slope):
+  tpdf = expon(trange[0], slope)
+  tnorm = np.diff( tpdf.cdf(trange) )[0]
+  return -np.sum( data['sw'].to_numpy() * np.log( tpdf.pdf( data['time'].to_numpy() ) / tnorm ) )
+
+def timepdf(slope, x):
+  tpdf = expon(trange[0],slope)
+  tnorm = np.diff( tpdf.cdf(trange) )[0]
+  return tpdf.pdf(x)/tnorm
+
+tmi = Minuit(tnll, slope=2, errordef=0.5, pedantic=False)
+tmi.migrad()
+tmi.hesse()
+print(tmi.params)
+
+# now draw the weighted control distributions
+fig, ax = plt.subplots(1,2,figsize=(12,4))
+
+ax[0].hist( [ data['ctrl'].to_numpy(), data['ctrl'].to_numpy(), data['ctrl'].to_numpy() ], bins=2, range=(0,2), weights=[ data['sw'].to_numpy(), data['bw'].to_numpy(), np.ones( data['sw'].to_numpy().shape ) ], label=['Applying $w\'_{s}$','Applying $w\'_{b}$','Truth'])
+ax[0].set_xticks( [0.5,1.5] )
+ax[0].set_xticklabels( ['Signal','Background'] )
+ax[0].set_xlabel('True Data Category')
+ax[0].set_ylabel('(weighted) entries')
+ax[0].legend()
+
+tbins = 100
+thist = bh.Histogram( bh.axis.Regular(tbins,*trange), storage=bh.storage.Weight() )
+thist.fill( data['time'].to_numpy(), weight=data['sw'].to_numpy() )
+ax[1].errorbar( thist.axes[0].centers, thist.view().value, yerr=thist.view().variance**0.5, xerr=0.5*(thist.axes[0].edges[:-1]-thist.axes[0].edges[1:]), fmt='ko', markersize=4., capsize=1., label='sWeighted Data' )
+#ax[1].plot( time, np.diff(trange)[0]/100 * len(data) * fmt(t=time, tproj=True, sonly=True), label='True PDF' )
+ax[1].plot( time, np.diff(trange)[0]/100 * thist.sum().value * timepdf( fit_pars['hs'][0], time ), label='True PDF' )
+ax[1].plot( time, np.diff(trange)[0]/100 * thist.sum().value * timepdf( tmi.values['slope'], time ), label='Fitted PDF' )
+ax[1].set_xlabel('decay time')
+ax[1].set_ylabel('weighted entries')
+ax[1].legend()
+
+fig.tight_layout()
+fig.savefig('%s/ctrl_fit.pdf'%opts.dir)
+
 
 print('Finished')
 plt.show()
