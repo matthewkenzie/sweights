@@ -282,7 +282,7 @@ wt_fname = 'toys/toy_n%d_s%d_wts.pkl'%(opts.nevents,opts.seed)
 if opts.rewht:
   import sys
   sys.path.append("/Users/matt/Scratch/stats/sweights")
-  from MySWeightClass import SWeight
+  from SWeighter import SWeight
 
   pdfs = [ pdf_dic[comp] for comp in compnames]
   ylds = [ abs_ylds[comp] for comp in compnames]
@@ -361,129 +361,75 @@ if not opts.batch:
 # weighted fit to projections
 from scipy.misc import derivative
 from tabulate import tabulate
-
-def wnll_sig(mean, sigma):
-  s = norm(mean,sigma)
-  sn = np.diff(s.cdf(bdkp.abrange))
-  wt   = data['sw_sig'].to_numpy()
-  spdf = s.pdf( data['m2ab'].to_numpy() )
-  wt   = wt[ spdf>0 ]
-  spdf = spdf[ spdf>0 ]
-  return -np.sum( wt * np.log( spdf / sn ) )
-
-def wnll_pr(mean, sigma):
-  s = norm(mean,sigma)
-  sn = np.diff(s.cdf(bdkp.acrange))
-  wt   = data['sw_partrechigh'].to_numpy()
-  spdf = s.pdf( data['m2ac'].to_numpy() )
-  wt   = wt[ spdf>0 ]
-  spdf = spdf[ spdf>0 ]
-  return -np.sum( wt * np.log( spdf / sn ) )
-
-def mpdf_sig(mean, sigma, x):
-  s = norm(mean,sigma)
-  sn = np.diff(s.cdf(bdkp.abrange))
-  return s.pdf(x) / sn
-
-def mpdf_pr(mean, sigma, x):
-  s = norm(mean,sigma)
-  sn = np.diff(s.cdf(bdkp.acrange))
-  return s.pdf(x) / sn
-
-# need to write these to help us differentiate them in the right order
-def mpdf_sig_mean(mean, sigma, x):
-  return mpdf_sig(mean, sigma, x)
-
-def mpdf_sig_sigma(sigma, mean, x):
-  return mpdf_sig(mean, sigma, x)
-
-def mpdf_pr_mean(mean, sigma, x):
-  return mpdf_pr(mean, sigma, x)
-
-def mpdf_pr_sigma(sigma, mean, x):
-  return mpdf_pr(mean, sigma, x)
-
-def derivative_sig(j, mean, sigma, x):
-  if j==0:
-    return derivative( mpdf_sig_mean, mean, n=1, args=(sigma,x) )
-  elif j==1:
-    return derivative( mpdf_sig_sigma, sigma, n=1, args=(mean,x) )
-
-def ln_derivative_sig(j, mean, sigma, x):
-  if j==0:
-    return derivative( mpdf_sig_mean, mean, n=1, args=(sigma,x) ) / mpdf_sig_mean(mean,sigma,x)
-  elif j==1:
-    return derivative( mpdf_sig_sigma, sigma, n=1, args=(mean,x) ) / mpdf_sig_sigma(sigma,mean,x)
-
-def derivative_pr(j, mean, sigma, x):
-  if j==0:
-    return derivative( mpdf_pr_mean, mean, n=1, args=(sigma,x) )
-  elif j==1:
-    return derivative( mpdf_pr_sigma, sigma, n=1, args=(mean,x) )
-
-def ln_derivative_pr(j, mean, sigma, x):
-  if j==0:
-    return derivative( mpdf_pr_mean, mean, n=1, args=(sigma,x) ) / mpdf_pr_mean(mean,sigma,x)
-  elif j==1:
-    return derivative( mpdf_pr_sigma, sigma, n=1, args=(mean,x) ) / mpdf_pr_sigma(sigma,mean,x)
-
-# minimisations
-mi_sig = Minuit( wnll_sig, mean=10, limit_mean=(5,15), sigma=0.2, limit_sigma=(0.05,1.), errordef=Minuit.LIKELIHOOD, pedantic=False )
-mi_sig.migrad()
-mi_sig.hesse()
-fvals_sig = mi_sig.np_values()
-cov_sig = mi_sig.np_covariance()
-if not opts.batch: print(mi_sig.params)
-
-#mi_pr = Minuit( wnll_pr, mean=15, limit_mean=(12,18), sigma=0.4, limit_sigma=(0.2,0.6), errordef=Minuit.LIKELIHOOD, pedantic=False )
-#mi_pr.migrad()
-#mi_pr.hesse()
-#print(mi_pr.params)
-#fvals_pr = mi_pr.np_values()
-#cov_pr  = mi_pr.np_covariance()
-
-# uncertainty corrections
-
-Djk_sig = np.zeros(cov_sig.shape)
-dim_sig = len(fvals_sig)
-for j in range(dim_sig):
-  for k in range(dim_sig):
-    Djk_sig[j,k] = np.sum( data['sw_sig'].to_numpy()**2 * ln_derivative_sig(j, fvals_sig[0], fvals_sig[1], data['m2ab'].to_numpy() ) * ln_derivative_sig(k, fvals_sig[0], fvals_sig[1], data['m2ab'].to_numpy() ) )
-
-newcov_sig = cov_sig * Djk_sig * cov_sig.T
-#newcov_sig = cov_sig
-
-#Djk_pr = np.zeros(cov_pr.shape)
-#dim_pr = len(fvals_pr)
-#for j in range(dim_pr):
-  #for k in range(dim_pr):
-    #Djk_pr[j,k] = np.sum( data['sw_partrechigh'].to_numpy()**2 * ln_derivative_pr(j, fvals_pr[0], fvals_pr[1], data['m2ac'].to_numpy() ) * ln_derivative_pr(k, fvals_pr[0], fvals_pr[1], data['m2ac'].to_numpy() ) )
-
-#newcov_pr = cov_pr * Djk_pr * cov_pr.T
-#newcov_pr = cov_pr
-
-## print res
-table = { "Parameter" : ["Mean","MeanErr","Sigma","SigmaErr"] }
-table['Signal'] = [ fvals_sig[0], newcov_sig[0,0]**0.5, fvals_sig[1], newcov_sig[1,1]**0.5 ]
-#table['ParRec'] = [ fvals_pr[0] , newcov_pr[0,0]**0.5 , fvals_pr[1] , newcov_pr[1,1]**0.5  ]
-print(tabulate(table,headers="keys",floatfmt=".6f"))
+import sys
+sys.path.append("/Users/matt/Scratch/stats/sweights")
+from CovarianceCorrector import cov_correct
 
 # plotting
-fig, ax = plt.subplots(1,1,figsize=(6,4))
+table = { "Parameter" : ["Mean","MeanErr","Sigma","SigmaErr"] }
+if not opts.batch: fig, ax = plt.subplots(1,1,figsize=(6,4))
 
-w, xe = np.histogram(data['m2ab'].to_numpy(), weights=data['sw_sig'], bins=80, range=bdkp.abrange)
-cx = 0.5 * (xe[1:] + xe[:-1])
-ax.errorbar( cx, w, np.abs(w)**0.5, fmt='ko' )
+for i, proj in enumerate(['sig']):#,'partrechigh']):
+  pdata = None
+  if proj=='sig':
+    m2range = (8,12)
+    m2var = 'm2ab'
+    stm = 10
+    sts = 0.2
+  else:
+    m2range = (11,19)
+    m2var = 'm2ac'
+    stm = 15
+    sts = 0.4
 
-x = np.linspace(*bdkp.abrange, 400)
-pdfnorm = ( bdkp.abrange[1] - bdkp.abrange[0] )/ 80
-ax.plot( x, np.sum(data['sw_sig'].to_numpy())*pdfnorm*mpdf_sig( *fvals_sig, x), 'b-')
+  pdata   = data[ (data[m2var]>=m2range[0]) & (data[m2var]<=m2range[1]) ]
 
-#w, xe = np.histogram(data['m2ac'].to_numpy(), weights=data['sw_partrechigh'], bins=80, range=bdkp.acrange)
-#cx = 0.5 * (xe[1:] + xe[:-1])
-#ax[1].errorbar( cx, w, np.abs(w)**0.5, fmt='ko' )
-#pdfnorm = ( bdkp.acrange[1] - bdkp.acrange[0] )/ 80
-#ax[1].plot( cx, np.sum(data['sw_partrechigh'].to_numpy())*pdfnorm*mpdf_pr( *fvals_pr, cx), 'b-')
+  vdata   = pdata[m2var].to_numpy()
+  wts     = pdata['sw_%s'%proj].to_numpy()
 
-fig.tight_layout()
-plt.show()
+  def wnll(mean, sigma):
+    s = norm(mean,sigma)
+    sn = np.diff(s.cdf(m2range))
+    spdf = s.pdf( vdata )
+    wt   = wts[ spdf>0 ]
+    spdf = spdf[ spdf>0 ]
+    return -np.sum( wt * np.log( spdf / sn ) )
+
+  def mpdf(mean, sigma, x):
+    s = norm(mean,sigma)
+    sn = np.diff(s.cdf(m2range))
+    res = s.pdf(x) / sn
+    res[ res<1e-20 ] = 1e-20
+    return res
+
+  # minimisations
+  mi = Minuit( wnll, mean=stm, limit_mean=m2range, sigma=sts, limit_sigma=(0.05,1.), errordef=Minuit.LIKELIHOOD, pedantic=False )
+  mi.migrad()
+  mi.hesse()
+
+  fvals = mi.np_values()
+  fcov   = mi.np_covariance()
+  if not opts.batch: print(mi.params)
+
+  ncov = cov_correct(mpdf, vdata, wts, fvals, fcov, verbose=False)
+
+  table[proj] = [ fvals[0], ncov[0,0]**0.5, fvals[1], ncov[1,1]**0.5 ]
+
+  if not opts.batch:
+    nbins = 80
+    w, xe = np.histogram(vdata, weights=wts, bins=nbins, range=m2range)
+    cx = 0.5 * (xe[1:] + xe[:-1])
+    ax.errorbar( cx, w, np.abs(w)**0.5, fmt='ko' )
+
+    x = np.linspace(*m2range, 400)
+    pdfnorm = ( m2range[1] - m2range[0] ) / nbins
+    ax.plot( x, np.sum(wts)*pdfnorm*mpdf( *fvals, x), 'b-')
+
+## print res
+print(tabulate(table,headers="keys",floatfmt=".6f"))
+with open('fitres/shape_n%d_s%d.txt'%(opts.nevents,opts.seed),'w') as f:
+  f.write( tabulate(table, headers="keys", floatfmt=".8f") )
+
+if not opts.batch:
+  fig.tight_layout()
+  fig.savefig('figs/ex2_m2dal.pdf')

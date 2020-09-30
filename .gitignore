@@ -1,4 +1,8 @@
 .DS_Store
 .ipynb_checkpoints
 __pycache__
-figs
+**/figs
+**/*.swp
+**/fitres
+**/toys
+**/logs

@@ -262,7 +262,7 @@ methods = ['summation','integration','refit','subhess'] #,'tsplot','roofit']
 if opts.rewht:
   import sys
   sys.path.append("/Users/matt/Scratch/stats/sweights")
-  from MySWeightClass import SWeight
+  from SWeighter import SWeight
 
   # set up the numpy/scipy format of pdfs and yields
   pdfs = [ norm( mi.values['mu'], mi.values['sigma'] ) ,
