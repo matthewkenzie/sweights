@@ -10,9 +10,9 @@ parser.add_argument('-n','--nevents', default=2500, type=int, help='Total number
 parser.add_argument('-r','--regen', default=False, action="store_true", help='Regenerate the toy')
 parser.add_argument('-f','--refit', default=False, action="store_true", help='Refit the toy')
 parser.add_argument('-w','--rewht', default=False, action="store_true", help='Recompute the weights')
-parser.add_argument('-s','--seed', default=1, type=int, help='Change the seed')
+parser.add_argument('-s','--seed' , default=1, type=int, help='Change the seed')
 parser.add_argument('-b','--batch', default=False, action="store_true", help='Run in batch mode (don\'t make plots etc.)')
-parser.add_argument('-a','--all', default=False, action="store_true", help='Rerun all')
+parser.add_argument('-a','--all'  , default=False, action="store_true", help='Rerun all')
 opts = parser.parse_args()
 
 if opts.all:
