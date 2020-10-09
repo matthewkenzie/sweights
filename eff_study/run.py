@@ -18,6 +18,7 @@
 from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument('-n','--nevents', default=2500 , type=int           , help='Total number of events to generate')
+parser.add_argument('-m','--mbins'  , default="auto", type=str          , help='Mass binning')
 parser.add_argument('-r','--regen'  , default=False, action="store_true", help='Regenerate the toy')
 parser.add_argument('-f','--refit'  , default=False, action="store_true", help='Rerun the weighted fit')
 parser.add_argument('-w','--rewht'  , default=False, action="store_true", help='Recompute the weights')
@@ -425,7 +426,7 @@ if not opts.batch:
 ### ie minimise the sum of studentized residuals
 
 ## bin the mass
-mbins = min(10, int(opts.nevents/200))
+mbins = max(10, int(opts.nevents/200)) if opts.mbins=='auto' else int(opts.mbins)
 # a normal unweighted histogram so we know the event count in each bin
 dmhist = bh.Histogram( bh.axis.Regular(mbins,*mrange) )
 dmhist.fill( data['mass'].to_numpy() )
@@ -476,22 +477,27 @@ def weighted_least_squares(z, mean, sigma, slope):
 mi = Minuit( weighted_least_squares, z=fit_pars['z'], mean=fit_pars['gs'][0], sigma=fit_pars['gs'][1], slope=fit_pars['gb'][0], pedantic=False )
 
 os.system('mkdir -p fitres')
+
+fnameext = 'n%d_s%d'%(opts.nevents,opts.seed)
+if opts.mbins != 'auto':
+  fnameext = 'm%d_'%int(opts.mbins) + fnameext
+
 if opts.refit:
   mi.migrad()
   mi.hesse()
 
-  with open('fitres/fitres_n%d_s%d.pkl'%(opts.nevents,opts.seed),'wb') as f:
+  with open('fitres/fitres_%s.pkl'%(fnameext),'wb') as f:
     pickle.dump( mi.fitarg, f)
-  with open('fitres/par_n%d_s%d.pkl'%(opts.nevents,opts.seed),'wb') as f:
+  with open('fitres/par_%s.pkl'%(fnameext),'wb') as f:
     pickle.dump( mi.np_values(), f)
-  with open('fitres/cov_n%d_s%d.pkl'%(opts.nevents,opts.seed),'wb') as f:
+  with open('fitres/cov_%s.pkl'%(fnameext),'wb') as f:
     pickle.dump( mi.np_covariance(), f)
 
-with open('fitres/fitres_n%d_s%d.pkl'%(opts.nevents,opts.seed),'rb') as f:
+with open('fitres/fitres_%s.pkl'%(fnameext),'rb') as f:
   fitarg = pickle.load(f)
-with open('fitres/par_n%d_s%d.pkl'%(opts.nevents,opts.seed),'rb') as f:
+with open('fitres/par_%s.pkl'%(fnameext),'rb') as f:
   par = pickle.load(f)
-with open('fitres/cov_n%d_s%d.pkl'%(opts.nevents,opts.seed),'rb') as f:
+with open('fitres/cov_%s.pkl'%(fnameext),'rb') as f:
   cov = pickle.load(f)
 
 mi = Minuit( weighted_least_squares, **fitarg, pedantic=False )
@@ -589,7 +595,7 @@ def sweightm(m, icomp, z, mean, sigma, slope):
   return numerator / denominator
 
 ## add the weights to the dataframe
-wt_fname = 'toys/toy_n%d_s%d_wts.pkl'%(opts.nevents,opts.seed)
+wt_fname = 'toys/toy_%s_wts.pkl'%(fnameext)
 if opts.rewht:
   data.insert(2, 'sw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 0, **mi.values ) )
   data.insert(3, 'bw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 1, **mi.values ) )
@@ -663,8 +669,10 @@ sys.path.append("/Users/matt/Scratch/stats/sweights")
 from CovarianceCorrector import cov_correct
 ncov = cov_correct(timepdf, data['time'].to_numpy(), data['sw'].to_numpy(), tmi.np_values(), tmi.np_covariance(), verbose=False)
 print('Fitted back: {:6.4f} +/- {:6.4f}'.format(tmi.np_values()[0], ncov[0,0]**0.5))
-with open('fitres/slope_n%d_s%d.txt'%(opts.nevents,opts.seed),'w') as f:
-  f.write('Fitted back: {:12.10f} +/- {:12.10f}'.format(tmi.np_values()[0], ncov[0,0,]**0.5))
+print('No correct : {:6.4f} +/- {:6.4f}'.format(tmi.np_values()[0], tmi.np_errors()[0]))
+with open('fitres/slope_%s.txt'%(fnameext),'w') as f:
+  f.write('Fitted back: {:12.10f} +/- {:12.10f}\n'.format(tmi.np_values()[0], ncov[0,0,]**0.5))
+  f.write('No correct : {:12.10f} +/- {:12.10f}\n'.format(tmi.np_values()[0], tmi.np_errors()[0]))
 
 # now draw the weighted control distributions
 if not opts.batch:

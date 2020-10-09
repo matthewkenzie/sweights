@@ -7,6 +7,7 @@ from matplotlib import cm
 from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument('-n','--nevents', default=2500, type=int, help='Total number of events to generate')
+parser.add_argument('-z','--zval', default=0.2, type=float, help='z value for signal to background ratio')
 parser.add_argument('-r','--regen', default=False, action="store_true", help='Regenerate the toy')
 parser.add_argument('-f','--refit', default=False, action="store_true", help='Refit the toy')
 parser.add_argument('-w','--rewht', default=False, action="store_true", help='Recompute the weights')
@@ -40,8 +41,8 @@ def read_pickle(fname):
 
 
 # true parameters for signal and background
-truth_n_sig = int(0.2*opts.nevents)
-truth_n_bkg = int(0.8*opts.nevents)
+truth_n_sig = int(opts.zval*opts.nevents)
+truth_n_bkg = opts.nevents - truth_n_sig
 
 # signal mass gauss:(mean, sigma)
 truth_sig_m = (5280, 30)
@@ -61,8 +62,8 @@ bkg_pdf_time = norm(*truth_bkg_t)
 # plot the pdfs
 mrange = (5000,5600)
 trange = (0,10)
-mass = np.linspace(*mrange)
-time = np.linspace(*trange)
+mass = np.linspace(*mrange,400)
+time = np.linspace(*trange,400)
 
 # get the normalisation for the range
 sig_norm_mass = np.diff(sig_pdf_mass.cdf(mrange))
@@ -112,12 +113,35 @@ if not opts.batch:
   fig.tight_layout()
   fig.savefig('figs/true_pdfs.pdf')
 
+  # 1D plots for the paper
+  fig, ax = plt.subplots(1,1,figsize=(6,4))
+  ax.plot( mass, truth_n_sig*sig_pdf_mass.pdf(mass)/sig_norm_mass + truth_n_bkg*bkg_pdf_mass.pdf(mass)/bkg_norm_mass , 'k-', label='Both' )
+  ax.plot( mass, truth_n_bkg*bkg_pdf_mass.pdf(mass)/bkg_norm_mass, 'b-' , label='Background')
+  ax.plot( mass, truth_n_sig*sig_pdf_mass.pdf(mass)/sig_norm_mass, 'r-' , label='Signal' )
+  ax.legend()
+  ax.set_xlabel('mass')
+  ax.set_ylabel('arbitary units')
+  fig.tight_layout()
+  fig.savefig('figs/ex1_true_pdf_mass.pdf')
+
+  fig, ax = plt.subplots(1,1,figsize=(6,4))
+  ax.plot( time, truth_n_sig*sig_pdf_time.pdf(time)/sig_norm_time + truth_n_bkg*bkg_pdf_time.pdf(time)/bkg_norm_time, 'k-', label='Both')
+  ax.plot( time, truth_n_bkg*bkg_pdf_time.pdf(time)/bkg_norm_time, 'b-' , label='Background')
+  ax.plot( time, truth_n_sig*sig_pdf_time.pdf(time)/sig_norm_time, 'r-' , label='Signal')
+  ax.legend()
+  ax.set_xlabel('time')
+  ax.set_ylabel('arbitary units')
+  fig.tight_layout()
+  fig.savefig('figs/ex1_true_pdf_time.pdf')
+
+  sys.exit()
+
 # generate a toy
 import pandas as pd
 np.random.seed(opts.seed)  # fix seed
 
 os.system('mkdir -p toys')
-toy_fname = 'toys/toy_n%d_s%d.pkl'%(opts.nevents,opts.seed)
+toy_fname = 'toys/toy_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed)
 
 if opts.regen:
 
@@ -194,9 +218,9 @@ if opts.refit:
   mi.migrad()
   mi.hesse()
 
-  to_pickle( 'fitres/fitres_n%d_s%d.pkl'%(opts.nevents,opts.seed), mi.fitarg )
-  to_pickle( 'fitres/par_n%d_s%d.pkl'%(opts.nevents,opts.seed), mi.np_values() )
-  to_pickle( 'fitres/cov_n%d_s%d.pkl'%(opts.nevents,opts.seed), mi.np_covariance() )
+  to_pickle( 'fitres/fitres_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed), mi.fitarg )
+  to_pickle( 'fitres/par_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed), mi.np_values() )
+  to_pickle( 'fitres/cov_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed), mi.np_covariance() )
 
   # now fit with shape fixed
   mi.fixed['mu'] = True
@@ -205,17 +229,17 @@ if opts.refit:
   mi.migrad()
   mi.hesse()
 
-  to_pickle( 'fitres/fitres_fix_n%d_s%d.pkl'%(opts.nevents,opts.seed), mi.fitarg )
-  to_pickle( 'fitres/par_fix_n%d_s%d.pkl'%(opts.nevents,opts.seed), mi.np_values() )
-  to_pickle( 'fitres/cov_fix_n%d_s%d.pkl'%(opts.nevents,opts.seed), mi.np_covariance() )
+  to_pickle( 'fitres/fitres_fix_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed), mi.fitarg )
+  to_pickle( 'fitres/par_fix_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed), mi.np_values() )
+  to_pickle( 'fitres/cov_fix_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed), mi.np_covariance() )
 
-fitarg = read_pickle('fitres/fitres_n%d_s%d.pkl'%(opts.nevents,opts.seed))
-par    = read_pickle('fitres/par_n%d_s%d.pkl'%(opts.nevents,opts.seed))
-cov    = read_pickle('fitres/cov_n%d_s%d.pkl'%(opts.nevents,opts.seed))
+fitarg = read_pickle('fitres/fitres_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed))
+par    = read_pickle('fitres/par_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed))
+cov    = read_pickle('fitres/cov_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed))
 
-fitarg_fix = read_pickle('fitres/fitres_fix_n%d_s%d.pkl'%(opts.nevents,opts.seed))
-par_fix    = read_pickle('fitres/par_fix_n%d_s%d.pkl'%(opts.nevents,opts.seed))
-cov_fix    = read_pickle('fitres/cov_fix_n%d_s%d.pkl'%(opts.nevents,opts.seed))
+fitarg_fix = read_pickle('fitres/fitres_fix_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed))
+par_fix    = read_pickle('fitres/par_fix_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed))
+cov_fix    = read_pickle('fitres/cov_fix_z%4.2f_n%d_s%d.pkl'%(opts.zval,opts.nevents,opts.seed))
 
 mi = Minuit(nll, **fitarg, pedantic=False)
 mi_fix  = Minuit(nll, **fitarg_fix, pedantic=False)
@@ -257,7 +281,7 @@ if not opts.batch:
   fig.savefig('figs/mass_fit.pdf')
 
 # compute the weights
-wt_fname = 'toys/toy_n%d_s%d_wts.pkl'%(opts.nevents,opts.seed)
+wt_fname = 'toys/toy_z%4.2f_n%d_s%d_wts.pkl'%(opts.zval,opts.nevents,opts.seed)
 methods = ['summation','integration','refit','subhess'] #,'tsplot','roofit']
 if opts.rewht:
   import sys
@@ -347,7 +371,7 @@ for i, meth in enumerate(methods):
 from tabulate import tabulate
 print(tabulate(table, headers="keys", floatfmt=".2f"))
 if not opts.batch: print(tabulate(table, headers="keys", tablefmt="latex", floatfmt=".2f"))
-with open('fitres/weights_n%d_s%d.txt'%(opts.nevents,opts.seed),'w') as f:
+with open('fitres/weights_z%4.2f_n%d_s%d.txt'%(opts.zval,opts.nevents,opts.seed),'w') as f:
   f.write(tabulate(table, headers="keys", floatfmt=".4f"))
 
 # now fit back the weighted data
@@ -414,7 +438,7 @@ for i, meth in enumerate(methods):
 
     #print( 'Fitted back lambd = {:8.6f} +/- {:8.6f}'.format(fitted_value,fitted_error))
     #print( 'Correc back lambd = {:8.6f} +/- {:8.6f}'.format(fitted_value,newcov[0,0]**0.5))
-    fit_back_vals.append( (fitted_value, newcov[0,0]**0.5) )
+    fit_back_vals.append( (fitted_value, newcov[0,0]**0.5, cov[0,0]**0.5) )
 
     # make a weighted histogram
     if not opts.batch:
@@ -468,8 +492,9 @@ if not opts.batch: print( mi.params )
 table = { 'Method' : ['2D Fit Result','1D Truth Fit Result', 'Variant A', 'Variant B','Variant C','Variant D'] ,
           'Slope Value' : [ mi.values['slambdt'], truth_fitted_value ] + [ x[0] for x in fit_back_vals ],
           'Slope Error' : [ mi.errors['slambdt'], truth_fitted_error ] + [ x[1] for x in fit_back_vals ],
+          'Slope Uncor' : [ mi.errors['slambdt'], truth_fitted_error ] + [ x[2] for x in fit_back_vals ],
         }
 print(tabulate(table, headers="keys", floatfmt=".3f"))
-with open('fitres/slope_n%d_s%d.txt'%(opts.nevents,opts.seed),'w') as f:
+with open('fitres/slope_z%4.2f_n%d_s%d.txt'%(opts.zval,opts.nevents,opts.seed),'w') as f:
   f.write(tabulate(table, headers="keys", floatfmt=".6f"))
 

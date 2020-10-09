@@ -23,7 +23,7 @@ def cov_correct(pdf, data, wts, fvals, fcov, verbose=False):
   Djk = np.zeros(fcov.shape)
 
   prob = pdf(*fvals, data)
-  print(prob)
+  #print(prob)
   for j in range(dim):
     derivj = partial_derivative(pdf,j,fvals,data)
     for k in range(dim):
