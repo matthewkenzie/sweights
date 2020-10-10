@@ -434,7 +434,6 @@ if not opts.batch:
 ### use this to extract weights and then unfold
 ### the efficiency afterwards
 if opts.wrong:
-  print(data)
 
   def nll(n_sig, n_bkg, mu, sigma, lambd):
     s = norm(mu,sigma)
@@ -506,7 +505,6 @@ if opts.wrong:
       if bonly: return n_bkg * bpdf.pdf(m) / bn
       return n_sig * spdf.pdf(m) / sn + n_bkg * bpdf.pdf(m) / bn
 
-  opts.batch = False
   if not opts.batch:
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     # bin data
@@ -523,83 +521,83 @@ if opts.wrong:
     fig.tight_layout()
     fig.savefig('figs/wrong_mass_fit.pdf')
 
-    # now compute the weights
-    wt_fname = 'toys/toy_%s_wts.pkl'%(fext)
-    if opts.rewht:
-      pdfs = [ norm( mi.values['mu'], mi.values['sigma'] ) ,
-               expon( 5000, mi.values['lambd'] )
-             ]
-      yields = [ mi.values['n_sig'], mi.values['n_bkg'] ]
+  # now compute the weights
+  wt_fname = 'toys/toy_%s_wts.pkl'%(fext)
+  if opts.rewht:
+    pdfs = [ norm( mi.values['mu'], mi.values['sigma'] ) ,
+             expon( 5000, mi.values['lambd'] )
+           ]
+    yields = [ mi.values['n_sig'], mi.values['n_bkg'] ]
 
-      sw = SWeight( data['mass'].to_numpy(), pdfs=pdfs, yields=yields, discvarranges=(mrange,), method='summation', compnames=('sig','bkg') )
+    sw = SWeight( data['mass'].to_numpy(), pdfs=pdfs, yields=yields, discvarranges=(mrange,), method='summation', compnames=('sig','bkg') )
 
-      if not opts.batch:
-        fig, ax = plt.subplots(1, 1, figsize=(6,4))
-        sw.makeWeightPlot(ax)
-        ax.set_xlabel('mass')
-        ax.set_ylabel('weight')
-        fig.tight_layout()
-        fig.savefig('figs/wrong_wts.pdf')
-
-      # save the weights in the frame
-      data.insert( len(data.columns), 'sw', sw.getWeight(0, data['mass'].to_numpy()) )
-      data.insert( len(data.columns), 'bw', sw.getWeight(1, data['mass'].to_numpy()) )
-
-      # save res
-      data.to_pickle(wt_fname)
-
-    else:
-      data = pd.read_pickle(wt_fname)
-
-    if not opts.batch: print(data)
-
-    # now fit back the weighted data
-    def wnll(lambd):
-        b = expon(0, lambd)
-        # normalisation factors are needed for time_pdfs, since x range is restricted
-        bn = np.diff(b.cdf(trange))
-        return -np.sum( data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) * np.log( b.pdf(data['time'].to_numpy()) / bn ) )
-
-    # the time pdf
-    def timepdf(lambd,x):
-        b = expon(0,lambd)
-        bn = np.diff(b.cdf(trange))
-        return b.pdf(x) / bn
-
-    # do minimisation
-    wmi = Minuit( wnll, lambd=fit_pars['hs'][0], limit_lambd=(1,3), errordef=Minuit.LIKELIHOOD, pedantic=False )
-    wmi.migrad()
-    wmi.hesse()
-    fitted_value = wmi.values['lambd']
-    fitted_error = wmi.errors['lambd']
-
-    # now we do the uncertainty correction
-    cov = wmi.np_covariance()
-
-    # correction piece
-    newcov = cov_correct(timepdf, data['time'].to_numpy(), data['sw'].to_numpy(), wmi.np_values(), wmi.np_covariance(), verbose=False)
-
-    wrong_fit_vals = ( 'Slope', fitted_value, newcov[0,0]**0.5, cov[0,0]**0.5 )
-    print('Fitted back: {:6.4f} +/- {:6.4f}'.format(fitted_value, newcov[0,0]**0.5))
-    print('No correct : {:6.4f} +/- {:6.4f}'.format(fitted_value, cov[0,0]**0.5))
-    with open('fitres/slope_%s.txt'%(fext),'w') as f:
-      f.write('Fitted back: {:6.4f} +/- {:6.4f}\n'.format(fitted_value, newcov[0,0]**0.5))
-      f.write('No correct : {:6.4f} +/- {:6.4f}\n'.format(fitted_value, cov[0,0]**0.5))
-
-    # make the plot
     if not opts.batch:
-      tbins = 50
-      whist = bh.Histogram( bh.axis.Regular(tbins,*trange), storage=bh.storage.Weight())
-      whist.fill( data['time'].to_numpy(), weight=data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) )
+      fig, ax = plt.subplots(1, 1, figsize=(6,4))
+      sw.makeWeightPlot(ax)
+      ax.set_xlabel('mass')
+      ax.set_ylabel('weight')
+      fig.tight_layout()
+      fig.savefig('figs/wrong_wts.pdf')
 
-      fig, ax = plt.subplots(1,1, figsize=(6,4))
-      ax.errorbar( whist.axes[0].centers, whist.view().value, whist.view().variance**0.5, fmt='ko' )
-      time_pdfnorm = np.sum( data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) ) * (trange[1]-trange[0])/tbins
-      tx = np.linspace(*trange,200)
-      ax.plot( tx, time_pdfnorm*timepdf(fitted_value, tx), 'b-' )
-      ax.set_xlabel('decay time')
-      ax.set_ylabel('weighted events')
-      fig.savefig('figs/wrong_time_fit.pdf')
+    # save the weights in the frame
+    data.insert( len(data.columns), 'sw', sw.getWeight(0, data['mass'].to_numpy()) )
+    data.insert( len(data.columns), 'bw', sw.getWeight(1, data['mass'].to_numpy()) )
+
+    # save res
+    data.to_pickle(wt_fname)
+
+  else:
+    data = pd.read_pickle(wt_fname)
+
+  if not opts.batch: print(data)
+
+  # now fit back the weighted data
+  def wnll(lambd):
+      b = expon(0, lambd)
+      # normalisation factors are needed for time_pdfs, since x range is restricted
+      bn = np.diff(b.cdf(trange))
+      return -np.sum( data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) * np.log( b.pdf(data['time'].to_numpy()) / bn ) )
+
+  # the time pdf
+  def timepdf(lambd,x):
+      b = expon(0,lambd)
+      bn = np.diff(b.cdf(trange))
+      return b.pdf(x) / bn
+
+  # do minimisation
+  wmi = Minuit( wnll, lambd=fit_pars['hs'][0], limit_lambd=(1,3), errordef=Minuit.LIKELIHOOD, pedantic=False )
+  wmi.migrad()
+  wmi.hesse()
+  fitted_value = wmi.values['lambd']
+  fitted_error = wmi.errors['lambd']
+
+  # now we do the uncertainty correction
+  cov = wmi.np_covariance()
+
+  # correction piece
+  newcov = cov_correct(timepdf, data['time'].to_numpy(), data['sw'].to_numpy(), wmi.np_values(), wmi.np_covariance(), verbose=False)
+
+  wrong_fit_vals = ( 'Slope', fitted_value, newcov[0,0]**0.5, cov[0,0]**0.5 )
+  print('Fitted back: {:6.4f} +/- {:6.4f}'.format(fitted_value, newcov[0,0]**0.5))
+  print('No correct : {:6.4f} +/- {:6.4f}'.format(fitted_value, cov[0,0]**0.5))
+  with open('fitres/slope_%s.txt'%(fext),'w') as f:
+    f.write('Fitted back: {:6.4f} +/- {:6.4f}\n'.format(fitted_value, newcov[0,0]**0.5))
+    f.write('No correct : {:6.4f} +/- {:6.4f}\n'.format(fitted_value, cov[0,0]**0.5))
+
+  # make the plot
+  if not opts.batch:
+    tbins = 50
+    whist = bh.Histogram( bh.axis.Regular(tbins,*trange), storage=bh.storage.Weight())
+    whist.fill( data['time'].to_numpy(), weight=data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) )
+
+    fig, ax = plt.subplots(1,1, figsize=(6,4))
+    ax.errorbar( whist.axes[0].centers, whist.view().value, whist.view().variance**0.5, fmt='ko' )
+    time_pdfnorm = np.sum( data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) ) * (trange[1]-trange[0])/tbins
+    tx = np.linspace(*trange,200)
+    ax.plot( tx, time_pdfnorm*timepdf(fitted_value, tx), 'b-' )
+    ax.set_xlabel('decay time')
+    ax.set_ylabel('weighted events')
+    fig.savefig('figs/wrong_time_fit.pdf')
 
   sys.exit()
 
