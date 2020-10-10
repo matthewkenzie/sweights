@@ -1,6 +1,18 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import norm
+import pickle
+
+def to_pickle(fname, obj):
+  outf = open(fname,'wb')
+  pickle.dump( obj, outf )
+  outf.close()
+
+def read_pickle(fname):
+  inf = open(fname,'rb')
+  obj = pickle.load(inf)
+  inf.close()
+  return obj
 
 def plot_pull(vals, ax=None, bins=25, range=None):
 

@@ -28,6 +28,7 @@ parser.add_argument('-a','--all'    , default=False, action="store_true", help='
 parser.add_argument('-p','--poisson', default=False, action="store_true", help='Poisson vary total number of events in toy')
 parser.add_argument('-d','--dir'    , default='figs'                    , help='Directory to store plots in')
 parser.add_argument('-D','--details', default=False, action="store_true", help='Rerun all the little details')
+parser.add_argument('-W','--wrong'  , default=False, action="store_true", help='Do the wrong thing: fit m, then get w, then unfold')
 opts = parser.parse_args()
 
 if opts.all:
@@ -35,9 +36,15 @@ if opts.all:
   opts.refit = True
   opts.rewht = True
 
+
 print('Seed:  ', opts.seed)
 print('Events:', opts.nevents)
 
+import sys
+sys.path.append("/Users/matt/Scratch/stats/sweights")
+from utils import to_pickle, read_pickle
+from SWeighter import SWeight
+from CovarianceCorrector import cov_correct
 import numpy as np
 from scipy.stats import norm, expon
 from scipy.integrate import quad, nquad
@@ -422,6 +429,181 @@ if not opts.batch:
     fig.tight_layout()
     fig.savefig('%s/fmtp_pdfs_with_toy.pdf'%opts.dir)
 
+### Here we can attempt to do the wrong thing
+### ie we fit the observed mass first and then
+### use this to extract weights and then unfold
+### the efficiency afterwards
+if opts.wrong:
+  print(data)
+
+  def nll(n_sig, n_bkg, mu, sigma, lambd):
+    s = norm(mu,sigma)
+    b = expon(5000, lambd)
+    sn = np.diff(s.cdf(mrange))
+    bn = np.diff(b.cdf(mrange))
+    no = n_sig + n_bkg
+    return no - np.sum(np.log(s.pdf(data['mass'].to_numpy()) / sn * n_sig + b.pdf(data['mass'].to_numpy()) / bn * n_bkg))
+
+  mi = Minuit(nll,
+              n_sig=truth_n_sig, n_bkg=truth_n_bkg,
+              mu=fit_pars['gs'][0], sigma=fit_pars['gs'][1], lambd=fit_pars['gb'][0],
+              errordef=Minuit.LIKELIHOOD,
+              pedantic=False)
+
+  os.system('mkdir -p fitres')
+  fext = 'wrong_n%d_s%d'%(opts.nevents,opts.seed)
+
+  if opts.refit:
+
+    # free fit
+    mi.migrad()
+    mi.hesse()
+
+    to_pickle( 'fitres/fitres_%s.pkl'%fext, mi.fitarg )
+    to_pickle( 'fitres/par_%s.pkl'%fext, mi.np_values() )
+    to_pickle( 'fitres/cov_%s.pkl'%fext, mi.np_covariance() )
+
+    # now fit with shape fixed
+    mi.fixed['mu'] = True
+    mi.fixed['sigma'] = True
+    mi.fixed['lambd'] = True
+    mi.migrad()
+    mi.hesse()
+
+    to_pickle( 'fitres/fitres_fix_%s.pkl'%fext, mi.fitarg )
+    to_pickle( 'fitres/par_fix_%s.pkl'%fext, mi.np_values() )
+    to_pickle( 'fitres/cov_fix_%s.pkl'%fext, mi.np_covariance() )
+
+  fitarg = read_pickle( 'fitres/fitres_%s.pkl'%fext )
+  par    = read_pickle( 'fitres/par_%s.pkl'%fext )
+  cov    = read_pickle( 'fitres/cov_%s.pkl'%fext )
+
+  fitarg_fix = read_pickle( 'fitres/fitres_fix_%s.pkl'%fext )
+  par_fix    = read_pickle( 'fitres/par_fix_%s.pkl'%fext )
+  cov_fix    = read_pickle( 'fitres/cov_fix_%s.pkl'%fext )
+
+  mi = Minuit(nll, **fitarg, pedantic=False)
+  mi_fix  = Minuit(nll, **fitarg_fix, pedantic=False)
+  mi_fix.fixed['mu'] = True
+  mi_fix.fixed['sigma'] = True
+  mi_fix.fixed['lambd'] = True
+
+  print('Free Mass Fit:')
+  print(mi.params)
+  print('Yield Only Mass Fit:')
+  print(mi_fix.params)
+
+  # visualise the fitted model
+  def mass_pdf(m, bonly=False, sonly=False):
+      n_sig, n_bkg, mu, sigma, lambd = par
+      spdf = norm(mu, sigma)
+      bpdf = expon(5000, lambd)
+
+      sn = np.diff(spdf.cdf(mrange))
+      bn = np.diff(bpdf.cdf(mrange))
+
+      if sonly: return n_sig * spdf.pdf(m) / sn
+      if bonly: return n_bkg * bpdf.pdf(m) / bn
+      return n_sig * spdf.pdf(m) / sn + n_bkg * bpdf.pdf(m) / bn
+
+  opts.batch = False
+  if not opts.batch:
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+    # bin data
+    w, xe = np.histogram(data['mass'].to_numpy(), bins=int(opts.nevents/100), range=mrange)
+    cx = 0.5 * (xe[1:] + xe[:-1])
+    # bin width to normalise mass_pdf for plotting
+    mass_pdfnorm = (mrange[1]-mrange[0])/(int(opts.nevents/100))
+
+    mx = np.linspace(*mrange,400)
+    ax.errorbar( cx, w, w**0.5, fmt='ko')
+    ax.plot( mx, mass_pdfnorm*mass_pdf(mx,bonly=True), 'r--')
+    ax.plot( mx, mass_pdfnorm*mass_pdf(mx), 'b-')
+    ax.set_xlabel('mass')
+    fig.tight_layout()
+    fig.savefig('figs/wrong_mass_fit.pdf')
+
+    # now compute the weights
+    wt_fname = 'toys/toy_%s_wts.pkl'%(fext)
+    if opts.rewht:
+      pdfs = [ norm( mi.values['mu'], mi.values['sigma'] ) ,
+               expon( 5000, mi.values['lambd'] )
+             ]
+      yields = [ mi.values['n_sig'], mi.values['n_bkg'] ]
+
+      sw = SWeight( data['mass'].to_numpy(), pdfs=pdfs, yields=yields, discvarranges=(mrange,), method='summation', compnames=('sig','bkg') )
+
+      if not opts.batch:
+        fig, ax = plt.subplots(1, 1, figsize=(6,4))
+        sw.makeWeightPlot(ax)
+        ax.set_xlabel('mass')
+        ax.set_ylabel('weight')
+        fig.tight_layout()
+        fig.savefig('figs/wrong_wts.pdf')
+
+      # save the weights in the frame
+      data.insert( len(data.columns), 'sw', sw.getWeight(0, data['mass'].to_numpy()) )
+      data.insert( len(data.columns), 'bw', sw.getWeight(1, data['mass'].to_numpy()) )
+
+      # save res
+      data.to_pickle(wt_fname)
+
+    else:
+      data = pd.read_pickle(wt_fname)
+
+    if not opts.batch: print(data)
+
+    # now fit back the weighted data
+    def wnll(lambd):
+        b = expon(0, lambd)
+        # normalisation factors are needed for time_pdfs, since x range is restricted
+        bn = np.diff(b.cdf(trange))
+        return -np.sum( data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) * np.log( b.pdf(data['time'].to_numpy()) / bn ) )
+
+    # the time pdf
+    def timepdf(lambd,x):
+        b = expon(0,lambd)
+        bn = np.diff(b.cdf(trange))
+        return b.pdf(x) / bn
+
+    # do minimisation
+    wmi = Minuit( wnll, lambd=fit_pars['hs'][0], limit_lambd=(1,3), errordef=Minuit.LIKELIHOOD, pedantic=False )
+    wmi.migrad()
+    wmi.hesse()
+    fitted_value = wmi.values['lambd']
+    fitted_error = wmi.errors['lambd']
+
+    # now we do the uncertainty correction
+    cov = wmi.np_covariance()
+
+    # correction piece
+    newcov = cov_correct(timepdf, data['time'].to_numpy(), data['sw'].to_numpy(), wmi.np_values(), wmi.np_covariance(), verbose=False)
+
+    wrong_fit_vals = ( 'Slope', fitted_value, newcov[0,0]**0.5, cov[0,0]**0.5 )
+    print('Fitted back: {:6.4f} +/- {:6.4f}'.format(fitted_value, newcov[0,0]**0.5))
+    print('No correct : {:6.4f} +/- {:6.4f}'.format(fitted_value, cov[0,0]**0.5))
+    with open('fitres/slope_%s.txt'%(fext),'w') as f:
+      f.write('Fitted back: {:6.4f} +/- {:6.4f}\n'.format(fitted_value, newcov[0,0]**0.5))
+      f.write('No correct : {:6.4f} +/- {:6.4f}\n'.format(fitted_value, cov[0,0]**0.5))
+
+    # make the plot
+    if not opts.batch:
+      tbins = 50
+      whist = bh.Histogram( bh.axis.Regular(tbins,*trange), storage=bh.storage.Weight())
+      whist.fill( data['time'].to_numpy(), weight=data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) )
+
+      fig, ax = plt.subplots(1,1, figsize=(6,4))
+      ax.errorbar( whist.axes[0].centers, whist.view().value, whist.view().variance**0.5, fmt='ko' )
+      time_pdfnorm = np.sum( data['sw'].to_numpy()/eff_pdf(data['mass'].to_numpy(),data['time'].to_numpy()) ) * (trange[1]-trange[0])/tbins
+      tx = np.linspace(*trange,200)
+      ax.plot( tx, time_pdfnorm*timepdf(fitted_value, tx), 'b-' )
+      ax.set_xlabel('decay time')
+      ax.set_ylabel('weighted events')
+      fig.savefig('figs/wrong_time_fit.pdf')
+
+  sys.exit()
+
+
 ### Now attempt the weighted fit to estimate zhat and ghats(m)
 ### ie minimise the sum of studentized residuals
 
@@ -664,9 +846,6 @@ tmi = Minuit(tnll, slope=2, errordef=0.5, pedantic=False)
 tmi.migrad()
 tmi.hesse()
 if not opts.batch: print(tmi.params)
-import sys
-sys.path.append("/Users/matt/Scratch/stats/sweights")
-from CovarianceCorrector import cov_correct
 ncov = cov_correct(timepdf, data['time'].to_numpy(), data['sw'].to_numpy(), tmi.np_values(), tmi.np_covariance(), verbose=False)
 print('Fitted back: {:6.4f} +/- {:6.4f}'.format(tmi.np_values()[0], ncov[0,0]**0.5))
 print('No correct : {:6.4f} +/- {:6.4f}'.format(tmi.np_values()[0], tmi.np_errors()[0]))
