@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument('-e','--nevents', default=2500, type=int, help='Total number of events to generate')
 parser.add_argument('-m','--mbins'  , default="auto", type=str          , help='Mass binning')
+parser.add_argument('-W','--wrong'  , default=False, action="store_true", help='Look for wrong fitting files')
 opts = parser.parse_args()
 
 import os
@@ -20,6 +21,7 @@ def extract_slope(sfile):
 slp_files = []
 for file in os.listdir('fitres'):
   match = 'slope_n{0}_*.txt'.format(opts.nevents) if opts.mbins=='auto' else 'slope_m{0}_n{1}_*.txt'.format(int(opts.mbins),opts.nevents)
+  if opts.wrong: match = 'slope_wrong_n{0}_*.txt'.format(opts.nevents)
   if fnmatch.fnmatch(file, match):
     slp_files.append(file)
 
@@ -66,6 +68,7 @@ os.system('mkdir -p figs/errs')
 
 fext = 'n%d'%opts.nevents
 if opts.mbins!='auto': fext = 'm%d_n%d'%(int(opts.mbins),opts.nevents)
+if opts.wrong: fext = 'wrong_n%d'%opts.nevents
 
 # plot the values
 vm, vs = plot_pull(vals, ax)

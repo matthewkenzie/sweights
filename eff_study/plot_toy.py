@@ -18,6 +18,17 @@ for fil in os.listdir("fitres"):
         if line.startswith('----'): continue
         els = line.split()
         rel_info[nevs][mbins] = [ float(x) for x in els[1:] ]
+  # get the "wrong" files and assign as mbins=1e6
+  if fnmatch.fnmatch(fil, "toyres_wrong_n*.log"):
+    nevs = int(fil.split('_n')[1].split('.log')[0])
+    mbins = 1e6
+    if nevs not in rel_info.keys(): rel_info[nevs] = {}
+    with open(os.path.join('fitres',fil)) as f:
+      for line in f.readlines():
+        if line.startswith('Parameter'): continue
+        if line.startswith('----'): continue
+        els = line.split()
+        rel_info[nevs][mbins] = [ float(x) for x in els[1:] ]
 
 npoints = sorted(rel_info.keys())
 mbins = sorted(rel_info[npoints[-1]].keys())
@@ -44,7 +55,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 cols = []
-marks = ['o','D','v','^','s']
+marks = ['o','D','v','^','s','P']
 
 for ptype in ['vals','pulls']:
 
@@ -66,6 +77,7 @@ for ptype in ['vals','pulls']:
 
     #x =  [ p+(i/len(mbins))*0.5*p for p in points ]
     lab = '%d bins'%c
+    if c==1e6: lab='Assume factorisation'
 
     ax.errorbar( x, ym, yme, fmt='C%d%s'%(i,marks[i]), linewidth=1, elinewidth=1, markersize=1., capsize=1.5, capthick=1 , zorder=i+2  )
     ax.errorbar( x, ym, yw, label=lab, fmt='C%d%s'%(i,marks[i]), linewidth=0.5, elinewidth=0.5, markersize=1., capsize=1.5, capthick=0.5, zorder=i+2+len(mbins)  )
@@ -98,7 +110,7 @@ for ptype in ['vals','pulls']:
   ax.set_xlabel('Sample size')
   if ptype=='vals': ax.set_ylabel('Slope parameter value')
   else: ax.set_ylabel('Slope parameter pull')
-  if ptype=='vals': ax.legend()
+  if ptype=='vals': ax.legend(ncol=2)
   else: ax.legend(ncol=2)
   fig.tight_layout()
   fig.savefig('figs/ex3_toy_%s.pdf'%ptype)

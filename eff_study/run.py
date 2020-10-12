@@ -779,6 +779,8 @@ wt_fname = 'toys/toy_%s_wts.pkl'%(fnameext)
 if opts.rewht:
   data.insert(2, 'sw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 0, **mi.values ) )
   data.insert(3, 'bw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 1, **mi.values ) )
+  data.insert(4, 'swm', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 0, **mi.values ) )
+  data.insert(5, 'bwm', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 1, **mi.values ) )
 
   data.to_pickle(wt_fname)
 
@@ -854,7 +856,7 @@ with open('fitres/slope_%s.txt'%(fnameext),'w') as f:
 # now draw the weighted control distributions
 if not opts.batch:
   fig, ax = plt.subplots(1,1,figsize=(6,4))
-  ax.hist( [ data['ctrl'].to_numpy(), data['ctrl'].to_numpy(), data['ctrl'].to_numpy() ], bins=2, range=(0,2), weights=[ data['sw'].to_numpy(), data['bw'].to_numpy(), np.ones( data['sw'].to_numpy().shape ) ], label=['Applying $w\'_{s}$','Applying $w\'_{b}$','Truth'])
+  ax.hist( [ data['ctrl'].to_numpy() for i in range(5) ], bins=2, range=(0,2), weights=[ data['sw'].to_numpy(), data['bw'].to_numpy(), data['swm'].to_numpy(), data['bwm'].to_numpy(), np.ones( data['sw'].to_numpy().shape ) ], label=['Applying $w\'_{s}$','Applying $w\'_{b}$','Applying $w_{s}$','Applying $w_{b}$','Truth'])
   ax.set_xticks( [0.5,1.5] )
   ax.set_xticklabels( ['Signal','Background'] )
   ax.set_xlabel('True Data Category')
