@@ -771,7 +771,13 @@ def sweightm(m, icomp, z, mean, sigma, slope):
   gbnorm = np.diff( gb.cdf(mrange) )[0]
   alph_vec = alphas[icomp]
   numerator = alph_vec[0]*gs.pdf(m)/gsnorm + alph_vec[1]*gb.pdf(m)/gbnorm
-  denominator =  z*gs.pdf(m)/gsnorm + (1-z)*gb.pdf(m)/gbnorm
+  bin_width = (mrange[1]-mrange[0])/mbins
+  inds = mhist.axes[0].index(m)
+  inds[inds>=mbins] = mbins-1
+  denominator = vec_fmtoep_mproj(m)
+  #fmtoep_proj = vec_fmtoep_mproj(mhist.axes[0].centers)
+  #denominator = mhist.view().variance[inds]/len(data)/bin_width
+  #denominator =  z*gs.pdf(m)/gsnorm + (1-z)*gb.pdf(m)/gbnorm
   return numerator / denominator
 
 ## add the weights to the dataframe
@@ -779,8 +785,8 @@ wt_fname = 'toys/toy_%s_wts.pkl'%(fnameext)
 if opts.rewht:
   data.insert(2, 'sw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 0, **mi.values ) )
   data.insert(3, 'bw', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 1, **mi.values ) )
-  data.insert(4, 'swm', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 0, **mi.values ) )
-  data.insert(5, 'bwm', sweight( data['mass'].to_numpy(), data['time'].to_numpy(), 1, **mi.values ) )
+  data.insert(4, 'swm', sweightm( data['mass'].to_numpy(), 0, **mi.values ) )
+  data.insert(5, 'bwm', sweightm( data['mass'].to_numpy(), 1, **mi.values ) )
 
   data.to_pickle(wt_fname)
 
