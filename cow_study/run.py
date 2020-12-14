@@ -1,115 +1,8 @@
-from scipy.stats import norm, expon, rv_continuous
-from scipy.special import binom
-from scipy._lib._util import _lazywhere
-from scipy import poly1d
-from numpy.polynomial.chebyshev import Chebyshev as cheb
+from scipy.stats import norm, expon
+from bernsteins import bpoly1, bpoly2, bpoly3, bpoly4
 import numpy as np
 import matplotlib.pyplot as plt
 from iminuit import Minuit
-
-# B(n,i)(x) = (n!)/(i!*(n-i)!) * (1-x)^(n-i) * x^i
-
-def bernk(n,k,x):
-  return binom(n,k) * (1-x)**(n-k) * x**k
-
-def bern(x,*coeffs):
-  n = len(coeffs)-1
-  res = 0
-  for i in range(len(coeffs)):
-    res += coeffs[i] * bernk(n,i,x)
-  return res
-
-def bernI(x,*coeffs):
-  n = len(coeffs)-1
-  res = 0
-  for i in range(n+1):
-    term = 0
-    for j in range(i,n+1):
-      term += ((-1)**(j-i)) * binom(n,j) * binom(j,i) * (x**(j+1)) / (j+1)
-    term *= coeffs[i]
-    res += term
-  return res
-
-def bernN(*coeffs):
-    return 1/bernI(1,*coeffs)
-
-class bpoly1_gen(rv_continuous):
-  def _pdf(self,x,p0,p1):
-    N = bernN(p0,p1)
-    return N * _lazywhere( (x>=0) & (x<=1) , (x,p0,p1), f=lambda x,p0,p1: bern(x,p0,p1), f2=lambda x,p0,p1: 0 )
-  def _cdf(self,x,p0,p1):
-    N = bernN(p0,p1)
-    ret = N * _lazywhere( (x>=0) & (x<=1), (x,p0,p1), f=lambda x,p0,p1: bernI(x,p0,p1), f2=lambda x,p0,p1: 0 )
-    ret[x>1] = 1
-    return ret
-bpoly1 = bpoly1_gen(name='bern1')
-
-class bpoly2_gen(rv_continuous):
-  def _pdf(self,x,p0,p1,p2):
-    N = bernN(p0,p1,p2)
-    return N * _lazywhere( (x>=0) & (x<=1) , (x,p0,p1,p2), f=lambda x,p0,p1,p2: bern(x,p0,p1,p2), f2=lambda x,p0,p1,p2: 0 )
-  def _cdf(self,x,p0,p1,p2):
-    N = bernN(p0,p1,p2)
-    ret = N * _lazywhere( (x>=0) & (x<=1), (x,p0,p1,p2), f=lambda x,p0,p1,p2: bernI(x,p0,p1,p2), f2=lambda x,p0,p1,p2: 0 )
-    ret[x>1] = 1
-    return ret
-bpoly2 = bpoly2_gen(name='bern2')
-
-class bpoly3_gen(rv_continuous):
-  def _pdf(self,x,p0,p1,p2,p3):
-    N = bernN(p0,p1,p2,p3)
-    return N * _lazywhere( (x>=0) & (x<=1) , (x,p0,p1,p2,p3), f=lambda x,p0,p1,p2,p3: bern(x,p0,p1,p2,p3), f2=lambda x,p0,p1,p2,p3: 0 )
-  def _cdf(self,x,p0,p1,p2,p3):
-    N = bernN(p0,p1,p2,p3)
-    ret = N * _lazywhere( (x>=0) & (x<=1), (x,p0,p1,p2,p3), f=lambda x,p0,p1,p2,p3: bernI(x,p0,p1,p2,p3), f2=lambda x,p0,p1,p2,p3: 0 )
-    ret[x>1] = 1
-    return ret
-bpoly3 = bpoly3_gen(name='bern3')
-
-class bpoly4_gen(rv_continuous):
-  def _pdf(self,x,p0,p1,p2,p3,p4):
-    pars = [p0,p1,p2,p3,p4]
-    xpars = [x]+pars
-    N = bernN(*pars)
-    return N * _lazywhere( (x>=0) & (x<=1) , xpars, f=lambda *xpars: bern(*xpars), f2=lambda *xpars: 0 )
-  def _cdf(self,x,p0,p1,p2,p3,p4):
-    pars = [p0,p1,p2,p3,p4]
-    xpars = [x]+pars
-    N = bernN(*pars)
-    ret = N * _lazywhere( (x>=0) & (x<=1), xpars, f=lambda *xpars: bernI(*xpars), f2=lambda *xpars: 0 )
-    ret[x>1] = 1
-    return ret
-bpoly4 = bpoly4_gen(name='bern4')
-
-class bpoly5_gen(rv_continuous):
-  def _pdf(self,x,p0,p1,p2,p3,p4,p5):
-    pars = [p0,p1,p2,p3,p4,p5]
-    xpars = [x]+pars
-    N = bernN(*pars)
-    return N * _lazywhere( (x>=0) & (x<=1) , xpars, f=lambda *xpars: bern(*xpars), f2=lambda *xpars: 0 )
-  def _cdf(self,x,p0,p1,p2,p3,p4,p5):
-    pars = [p0,p1,p2,p3,p4,p5]
-    xpars = [x]+pars
-    N = bernN(*pars)
-    ret = N * _lazywhere( (x>=0) & (x<=1), xpars, f=lambda *xpars: bernI(*xpars), f2=lambda *xpars: 0 )
-    ret[x>1] = 1
-    return ret
-bpoly5 = bpoly5_gen(name='bern5')
-
-class bpoly6_gen(rv_continuous):
-  def _pdf(self,x,p0,p1,p2,p3,p4,p5,p6):
-    pars = [p0,p1,p2,p3,p4,p5,p6]
-    xpars = [x]+pars
-    N = bernN(*pars)
-    return N * _lazywhere( (x>=0) & (x<=1) , xpars, f=lambda *xpars: bern(*xpars), f2=lambda *xpars: 0 )
-  def _cdf(self,x,p0,p1,p2,p3,p4,p5,p6):
-    pars = [p0,p1,p2,p3,p4,p5,p6]
-    xpars = [x]+pars
-    N = bernN(*pars)
-    ret = N * _lazywhere( (x>=0) & (x<=1), xpars, f=lambda *xpars: bernI(*xpars), f2=lambda *xpars: 0 )
-    ret[x>1] = 1
-    return ret
-bpoly6 = bpoly6_gen(name='bern6')
 
 if __name__ == '__main__':
   mrange = (5000,5600)
@@ -262,5 +155,91 @@ if __name__ == '__main__':
   ax.plot( x, pn*pdf(x,poly=4))
 
   fig.tight_layout()
+  #plt.show()
+
+  from cow import cow
+  for ctype in [1,2,3]:
+    obs = None
+    bins_obs = 200
+    if ctype==3: obs = np.histogram( data['mass'], bins=bins_obs, range=mrange )
+    mycow = cow(Im=ctype, obs=obs)
+    print( mycow.Wkl() )
+    print( mycow.Akl() )
+
+    # fit the weighted data
+    wts = mycow.wk(0,data['mass'])
+    def wnll(lambd):
+      b = expon(trange[0], lambd)
+      bn = np.diff( b.cdf(trange) )
+      return -np.sum( wts * ( b.logpdf( data['time'] ) - np.log(bn) ) )
+    def timepdf(lambd,x):
+      b = expon(trange[0], lambd)
+      bn = np.diff( b.cdf(trange) )
+      return b.pdf(x) / bn
+
+    mit = Minuit( wnll, lambd=2, errordef=0.5, pedantic=False )
+    mit.migrad()
+    mit.hesse()
+    import sys
+    sys.path.append("/Users/matt/Scratch/stats/sweights")
+    from CovarianceCorrector import cov_correct
+    cov = cov_correct(timepdf, data['time'], wts, mit.np_values(), mit.np_covariance(), verbose=False)
+    fval = mit.values['lambd']
+    ferr = cov[0,0]**0.5
+
+    fig, ax = plt.subplots(2,2,figsize=(12,8))
+
+    # plot the component pdfs used for the weights
+    m = np.linspace(*mrange,200)
+    ax[0,0].plot( m, mycow.fmt(m,sonly=True), 'b-', label='signal')
+    ax[0,0].plot( m, mycow.fmt(m,bonly=True), 'r-', label='background')
+    ax[0,0].legend()
+    ax[0,0].set_xlabel('mass')
+    ax[0,0].set_ylabel('probability')
+
+    # plot the weights
+    sw = mycow.wk(0,m)
+    bw = mycow.wk(1,m)
+    ax[1,0].plot( m, sw, label='signal' )
+    ax[1,0].plot( m, bw, label='background' )
+    ax[1,0].plot( m, sw+bw, label='sum' )
+    ax[1,0].set_xlabel('mass')
+    ax[1,0].set_ylabel('weight')
+
+    # plot the weighted data
+    w, xe = np.histogram( data['time'], bins=bins, range=trange, weights=wts )
+    cx = 0.5 * (xe[1:] + xe[:-1] )
+    ax[0,1].errorbar( cx, w, w**0.5, fmt='bx', label='sCOW weigted data' )
+    t = np.linspace(*trange,200)
+    pnorm = np.sum(wts)*np.diff(trange)/bins
+    ax[0,1].plot( t, pnorm*h0.pdf(t), 'b-', label='True $h_0(t)$ distribution' )
+    ax[0,1].plot( t, pnorm*timepdf(fval,t), 'r--', label='Fitted $h_0(t)$ distribution' )
+    ax[0,1].set_yscale('log')
+    ylim = ax[0,1].get_ylim()
+    ax[0,1].set_ylim( 1, ylim[1] )
+    ax[0,1].set_xlabel('time')
+    ax[0,1].set_ylabel('weighted events')
+
+    truen = len(data[data['ctrl']==0])
+    sum_w = np.sum(wts)
+    err_w = np.sum(wts**2)**0.5
+    #print(truen, truen**0.5, sum_w, err_w)
+    ax[0,1].text(0.6,0.7,'$\sum w = {:.2f} \pm {:.2f}$'.format( sum_w,err_w ), transform=ax[0,1].transAxes )
+    ax[0,1].text(0.6,0.6,'$\lambda = {:.2f} \pm {:.2f}$'.format( fval, ferr ), transform=ax[0,1].transAxes )
+    ax[0,1].legend()
+
+    # plot the observed data with Im
+    w, xe = np.histogram( data['mass'], bins=bins, range=mrange )
+    cx = 0.5 * (xe[1:] + xe[:-1] )
+    ax[1,1].errorbar( cx, w, w**0.5, fmt='bx', label=r'Observed data')
+    pnorm = np.sum(w)*np.diff(mrange)/bins
+    if ctype==3: pnorm = np.sum(w) * (bins_obs/bins)
+    ax[1,1].plot( m, pnorm*mycow.Im(m), 'r-', label=r'$I(m)$ model' )
+    ax[1,1].set_xlabel('mass')
+    ax[1,1].set_ylabel('events')
+    ax[1,1].legend()
+    fig.tight_layout()
+    fig.savefig('plots/cow%d.pdf'%ctype)
+
   plt.show()
 
