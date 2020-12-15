@@ -16,10 +16,7 @@ class cow():
     self.mrange = mrange
     self.gs = gs
     self.gb = gb if hasattr(gb,'__iter__') else [gb]
-    print ( self.gs )
-    print ( self.gb )
     self.gk = [self.gs] + self.gb
-    print ( self.gk )
     self.Im = Im
     self.obs = obs
     if obs:

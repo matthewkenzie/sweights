@@ -11,8 +11,8 @@ class toy():
     if not sfact: raise RuntimeError('Must have factorising signal')
     self.eff = eff or 1
     if eff == 'flat' or eff == 'uniform': self.eff = 1
-    if eff == 'factorising': self.eff = 2
-    if eff == 'non-factorising': self.eff = 3
+    if eff == 'factorising' or eff == 'fact': self.eff = 2
+    if eff == 'non-factorising' or eff == 'nonfact': self.eff = 3
     if self.eff not in [1,2,3]: raise RuntimeError('Not a valid efficiency option')
     self.sfact = sfact
     self.bfact = bfact
