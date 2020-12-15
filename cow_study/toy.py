@@ -250,8 +250,8 @@ class toy():
 #for eff in [1,2,3]:
   #t = toy(eff=eff)
   #t.draw(name='plots/gen%d.pdf'%eff)
-#t = toy(eff=3, bfact=False)
-#t.generate(size=10000,fname='toy.pkl')
+#t = toy(eff=3 )
+#t.generate(size=1000,fname='toy.pkl')
 #t.draw(withtoy=True)
 
 #plt.show()
