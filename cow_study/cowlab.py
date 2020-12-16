@@ -10,7 +10,8 @@ from scipy.integrate import quad
 import matplotlib.pyplot as plt
 from matplotlib.widgets import RadioButtons, Slider
 
-from toy import toy
+#from toy import toy
+from model import model
 from cow import cow
 from iminuit import Minuit
 from CovarianceCorrector import cov_correct
@@ -84,7 +85,7 @@ class cowlab:
     self.eff = label
 
   def readData(self):
-    toyfname = 'toys/toy_e{0}_bfact_10000.pkl'.format(self.eff)
+    toyfname = 'toys/toy_e{0}_bfact_s10000.pkl'.format(self.eff)
     print('Reading data toy from', toyfname)
     if not os.path.exists(toyfname):
       raise RuntimeError('No file here', toyfname)
@@ -238,9 +239,9 @@ class cowlab:
     # read in the toy (or make it)
     self.readData()
     # run the cow
-    self.cow = cow(mrange=self.mrange, gs=self.gs, gb=self.gb, Im=self.Im, obs=self.obs)
-    print( self.cow.Wkl() )
-    print( self.cow.Akl() )
+    #self.cow = cow(mrange=self.mrange, gs=self.gs, gb=self.gb, Im=self.Im, obs=self.obs)
+    #print( self.cow.Wkl() )
+    #print( self.cow.Akl() )
     self.plot_pdfs(self.cax[0,0])
     self.plot_wts(self.cax[1,0])
     self.plot_tdata(self.cax[0,1])
