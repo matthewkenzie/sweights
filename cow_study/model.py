@@ -267,7 +267,7 @@ class model:
     self.toy = self.toy.astype( {'mass': float, 'time': float, 'ctrl': int} )
     self.toy.to_pickle(fname)
 
-  def draw(self, save=None, with_toy=None):
+  def draw(self, save=None, with_toy=None, fig=None, ax=None):
     m = np.linspace(*self.mrange,100)
     t = np.linspace(*self.trange,100)
     x, y = np.meshgrid(m,t)
@@ -292,7 +292,8 @@ class model:
       print( mn, np.sum(mw), len(self.toy), np.sum(msw), np.sum(mbw) )
       print( tn, np.sum(tw), len(self.toy), np.sum(tsw), np.sum(tbw) )
 
-    fig, ax = plt.subplots(2,3,figsize=(18,8))
+    if fig is None or ax is None:
+      fig, ax = plt.subplots(2,3,figsize=(18,8))
 
     cb1 = ax[0,0].contourf( x, y, self.fmt(x,y) )
     fig.colorbar(cb1, ax=ax[0,0])
@@ -347,19 +348,19 @@ class model:
     fig.tight_layout()
     if save is not None: fig.savefig(save)
 
-os.system('mkdir -p plots')
-for bfact in [True,False]:
-  #for eff in ['flat','fact','nonfact']:
-  for eff in ['nonfact']:
-    mod = model( eff=eff, bfact=bfact )
-    bname = 'fact' if bfact else 'nonfact'
+#os.system('mkdir -p plots')
+#for bfact in [True,False]:
+  ##for eff in ['flat','fact','nonfact']:
+  #for eff in ['nonfact']:
+    #mod = model( eff=eff, bfact=bfact )
+    #bname = 'fact' if bfact else 'nonfact'
 
-    size = 10000
-    tname = 'toys/toy_e%s_b%s_s%d.pdf'%(eff,bname,size)
-    mod.generate(size=size, poisson=False, seed=210187, fname=tname)
+    #size = 10000
+    #tname = 'toys/toy_e%s_b%s_s%d.pdf'%(eff,bname,size)
+    #mod.generate(size=size, poisson=False, seed=210187, fname=tname)
 
-    pname = 'plots/model_e%s_b%s.pdf'%(eff,bname)
-    mod.draw( save=pname, with_toy=tname )
-    #mod.check()
+    #pname = 'plots/model_e%s_b%s.pdf'%(eff,bname)
+    #mod.draw( save=pname, with_toy=tname )
+    ##mod.check()
 
-plt.show()
+#plt.show()

@@ -8,7 +8,9 @@ from scipy.stats import norm, expon, uniform
 from scipy.integrate import quad
 
 import matplotlib.pyplot as plt
-from matplotlib.widgets import RadioButtons, Slider
+from matplotlib.widgets import RadioButtons, Slider, CheckButtons, TextBox
+import warnings
+warnings.filterwarnings("ignore")
 
 #from toy import toy
 from model import model
@@ -36,6 +38,9 @@ class cowlab:
     self.obs = None
     self.cow = None
     self.eff = None
+    self.model = None
+    self.bfact = None
+    self.events = None
 
     # set up some functions
     self.sig = norm(5280,30)
@@ -63,6 +68,8 @@ class cowlab:
     self.setGs(2)
     self.setGb(-1)
     self.setEff('flat')
+    self.bfact = True
+    self.events = 10000
 
   def setIm(self, typ):
     if   typ==1: self.Im = lambda m: self.unf.pdf(m) / self.un
@@ -85,11 +92,12 @@ class cowlab:
     self.eff = label
 
   def readData(self):
-    toyfname = 'toys/toy_e{0}_bfact_s10000.pkl'.format(self.eff)
-    print('Reading data toy from', toyfname)
-    if not os.path.exists(toyfname):
-      raise RuntimeError('No file here', toyfname)
-    self.data = pd.read_pickle( toyfname )
+    bname = 'fact' if self.bfact else 'nonfact'
+    self.toyfname = 'toys/toy_e{0}_b{1}_{2}.pkl'.format(self.eff,bname,self.events)
+    #print('Reading data toy from', toyfname)
+    if not os.path.exists(self.toyfname):
+      raise RuntimeError('No file here', self.toyfname)
+    self.data = pd.read_pickle( self.toyfname )
 
   # nll function for weighted data
   def wnll(self, lambd):
@@ -104,6 +112,7 @@ class cowlab:
 
   def wfit(self):
     self.dsw = self.cow.wk(0,self.data['mass'])
+    self.dsw /= self.model.effmt(self.data['mass'],self.data['time'])
     mi = Minuit( self.wnll, lambd=2, errordef=0.5, pedantic=False )
     mi.migrad()
     mi.hesse()
@@ -188,9 +197,8 @@ class cowlab:
   def plot_model(self, fig, ax):
     ax.clear()
     if hasattr(self,'mcolb'): self.mcolb.remove()
-    self.toy = toy(eff=self.eff)
     x, y = np.meshgrid(self.m,self.t)
-    cb = ax.contourf( x, y, 1e3*self.toy.fmt(x,y) )
+    cb = ax.contourf( x, y, 1e3*self.model.fmt(x,y) )
     self.mcolb = fig.colorbar( cb, ax=ax)
     self.mcolb.set_label(r'Probability $(\times 10^{-3})$')
     ax.set_title('Truth model: $f(m,t)$')
@@ -200,9 +208,8 @@ class cowlab:
   def plot_eff(self, fig, ax):
     ax.clear()
     if hasattr(self,'ecolb'): self.ecolb.remove()
-    self.toy = toy(eff=self.eff)
     x, y = np.meshgrid(self.m,self.t)
-    cb = ax.contourf( x, y, self.toy.effmt(x,y), levels=np.linspace(0,1,11) )
+    cb = ax.contourf( x, y, self.model.effmt(x,y), levels=np.linspace(0,1,11) )
     self.ecolb = fig.colorbar( cb, ax=ax)
     self.ecolb.set_label('Efficiency')
     ax.set_title('Efficiency map')
@@ -211,41 +218,47 @@ class cowlab:
 
   def plot_mproj(self, ax):
     ax.clear()
-    self.toy = toy(eff=self.eff)
     w, xe = np.histogram( self.data['mass'], bins=self.bins, range=self.mrange )
     norm = np.sum(w) * np.diff(self.mrange)/self.bins
-    if self.eff!='flat': norm /= quad(lambda m: self.toy.rhomt(m, None), *self.mrange)[0]
     cx = 0.5 * (xe[1:]+xe[:-1])
     ax.errorbar( cx, w, w**0.5, fmt='ko', ms=3, capsize=2, label='Toy Data' )
-    by = self.toy.rhomt(self.m, None, bonly=True)
-    ty = self.toy.rhomt(self.m, None )
-    ax.plot( self.m, norm*by, 'r--', label='Background')
-    ax.plot( self.m, norm*ty, 'b-', label='Signal + Background')
+    #by = self.toy.rhomt(self.m, None, bonly=True)
+    #ty = self.toy.rhomt(self.m, None )
+    ax.plot( self.m, norm*self.model.rbm(self.m), 'r--', label='Background')
+    ax.plot( self.m, norm*self.model.rm(self.m), 'b-', label='Signal + Background')
     ax.legend()
     ax.set_title('Truth model with efficiency projection in mass')
     ax.set_xlabel('mass')
 
   def plot_tproj(self, ax):
     ax.clear()
-    self.toy = toy(eff=self.eff)
+    #self.toy = toy(eff=self.eff)
     w, xe = np.histogram( self.data['time'], bins=self.bins, range=self.trange )
     norm = np.sum(w) * np.diff(self.trange)/self.bins
     cx = 0.5 * (xe[1:]+xe[:-1])
     ax.errorbar( cx, w, w**0.5, fmt='ko', ms=3, capsize=2, label='Toy Data' )
+    ax.plot( self.t, norm*self.model.rbt(self.t), 'r--', label='Background')
+    ax.plot( self.t, norm*self.model.rt(self.t), 'b-', label='Signal + Background')
     ax.set_title('Truth model with efficiency projection in time')
     ax.set_ylabel('time')
+
+  def plotm(self,fig,ax):
+    for a in ax.flatten(): a.clear()
+    self.model.draw(with_toy=self.toyfname, fig=fig, ax=ax)
 
   def update(self):
     # read in the toy (or make it)
     self.readData()
     # run the cow
-    #self.cow = cow(mrange=self.mrange, gs=self.gs, gb=self.gb, Im=self.Im, obs=self.obs)
+    self.cow = cow(mrange=self.mrange, gs=self.gs, gb=self.gb, Im=self.Im, obs=self.obs)
+    self.model = model( eff=self.eff, bfact=self.bfact )
     #print( self.cow.Wkl() )
     #print( self.cow.Akl() )
     self.plot_pdfs(self.cax[0,0])
     self.plot_wts(self.cax[1,0])
     self.plot_tdata(self.cax[0,1])
     self.plot_mdata(self.cax[1,1])
+    #self.plotm(self.tfig,self.tax)
     self.plot_model(self.tfig,self.tax[0,0])
     self.plot_eff(self.tfig,self.tax[1,0])
     self.plot_mproj(self.tax[0,1])
@@ -254,6 +267,7 @@ class cowlab:
     self.tfig.canvas.draw_idle()
     self.cfig.tight_layout()
     self.cfig.canvas.draw_idle()
+    print('Done. Awaiting your command sire')
 
   def run(self):
 
@@ -262,10 +276,14 @@ class cowlab:
     self.cfig, self.cax = plt.subplots(2,2,figsize=(12,8))
 
     # widget axis
-    wfig = plt.figure(figsize=(2,4))
+    wfig = plt.figure(figsize=(2,8))
+
+    widgey = 1
+    step_widge = 0.06
 
     # Im widget
-    butIm = RadioButtons(plt.axes([0.,0.8,1,0.2]), ('$I(m)=1$',r'$I(m)=\rho(m)$', '$I(m)=q(m)$'), active=0 )
+    widgey -= 3*step_widge
+    butIm = RadioButtons(plt.axes([0.,widgey,1,3*step_widge]), ('$I(m)=1$',r'$I(m)=\rho(m)$', '$I(m)=q(m)$'), active=0 )
     def imfunc(label):
       if   label == '$I(m)=1$': self.setIm(1)
       elif label == r'$I(m)=\rho(m)$': self.setIm(2)
@@ -274,7 +292,8 @@ class cowlab:
     butIm.on_clicked(imfunc)
 
     # Gs widget
-    butGs = RadioButtons(plt.axes([0,0.6,1,0.2]), ('$g_s(m)=1$',r'$g_s(m)=g_0$', '$g_s(m)=p(m)$'), active=1 )
+    widgey -= 3*step_widge
+    butGs = RadioButtons(plt.axes([0,widgey,1,3*step_widge]), ('$g_s(m)=1$',r'$g_s(m)=g_0$', '$g_s(m)=p(m)$'), active=1 )
     def gsfunc(label):
       if   label == '$g_s(m)=1$': self.setGs(1)
       elif label == r'$g_s(m)=g_0$': self.setGs(2)
@@ -283,30 +302,48 @@ class cowlab:
     butGs.on_clicked(gsfunc)
 
     # Gb widget
-    butGb = RadioButtons(plt.axes([0,0.4,1,0.2]), ('exp','pols'), active=0 )
+    widgey -= 2.5*step_widge
+    butGb = RadioButtons(plt.axes([0,widgey,1,2.5*step_widge]), ('exp','pols'), active=0 )
     def gbfunc(label):
       if   label == 'exp': self.setGb(-1)
       elif label == 'pols': self.setGb(self.poln)
       self.update()
     butGb.on_clicked(gbfunc)
 
-    # Gb slider
-    sldGb = Slider(plt.axes([0.2,0.3,0.6,0.05]), 'nBkg', 0,6,valstep=1,valinit=0)
-    def sgbfunc(val):
-      self.setGb(sldGb.val)
-      self.poln = sldGb.val
+    # Gb text
+    txtGb = TextBox(plt.axes([0.55, widgey+0.4*step_widge, 0.35, 0.8*step_widge]), '', initial='0' )
+    def txtfunc(text):
+      try: self.poln = int(text)
+      except: raise TypeError('Must pass an integer order')
+      if self.poln<0 or self.poln>6: raise ValueError('Background order must be in [0,6]')
       butGb.set_active(1)
-      self.update()
-    sldGb.on_changed(sgbfunc)
+    txtGb.on_submit(txtfunc)
 
-    # Gb text box
-
-    # Efficiency
-    butEff = RadioButtons(plt.axes([0,0,1,0.2]), ('flat','fact','nonfact'), active=0)
+    # Efficiency widget
+    widgey -= 3*step_widge
+    butEff = RadioButtons(plt.axes([0,widgey,1,3*step_widge]), ('flat','fact','nonfact'), active=0)
     def efffunc(label):
       self.setEff(label)
       self.update()
     butEff.on_clicked(efffunc)
+
+    # Background widget
+    widgey -= 3*step_widge
+    butBkg = CheckButtons(plt.axes([0,widgey,1,3*step_widge]), ('Bkg Fact',), (True,))
+    def bkgfunc(label):
+      self.bfact = not self.bfact
+      self.update()
+    butBkg.on_clicked(bkgfunc)
+
+    # Number of events widget
+    widgey -= 2*step_widge
+    txtEvs = TextBox(plt.axes([0.1, widgey+0.2*step_widge, 0.8, step_widge]), '', initial='10000' )
+    def evfunc(text):
+      try: self.events = int(text)
+      except: raise TypeError('Must pass an integer number of events')
+      self.update()
+    txtEvs.on_submit(evfunc)
+    plt.text(0,widgey+20*step_widge,'Events:')
 
     # update things
     self.update()
