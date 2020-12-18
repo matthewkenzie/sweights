@@ -41,6 +41,7 @@ class cowlab:
     self.model = None
     self.bfact = None
     self.events = None
+    self.regen = None
 
     # set up some functions
     self.sig = norm(5280,30)
@@ -70,6 +71,7 @@ class cowlab:
     self.setEff('flat')
     self.bfact = True
     self.events = 10000
+    self.regen = False
 
   def setIm(self, typ):
     if   typ==1: self.Im = lambda m: self.unf.pdf(m) / self.un
@@ -329,9 +331,10 @@ class cowlab:
 
     # Background widget
     widgey -= 3*step_widge
-    butBkg = CheckButtons(plt.axes([0,widgey,1,3*step_widge]), ('Bkg Fact',), (True,))
+    butBkg = CheckButtons(plt.axes([0,widgey,1,3*step_widge]), ('Bkg Fact?','Regenerate?'), (True,False))
     def bkgfunc(label):
-      self.bfact = not self.bfact
+      if label=='Bkg Fact?': self.bfact = not self.bfact
+      if label=='Regenerate?': self.regen = not self.regen
       self.update()
     butBkg.on_clicked(bkgfunc)
 
@@ -348,6 +351,9 @@ class cowlab:
     # update things
     self.update()
     plt.show()
+    #plt.show(block=False)
+    #input("Hit any key in this terminal to close")
+    #plt.close('all')
 
 
     # do the plots
