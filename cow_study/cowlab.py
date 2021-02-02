@@ -12,7 +12,7 @@ from matplotlib.widgets import RadioButtons, Slider, CheckButtons, TextBox
 import warnings
 warnings.filterwarnings("ignore")
 
-#from toy import toy
+from toy import toy
 from model import model
 from cow import cow
 from iminuit import Minuit
@@ -93,12 +93,18 @@ class cowlab:
       raise RuntimeError('Not a valid option for efficiency', label)
     self.eff = label
 
+  def regenerate(self, fname):
+    t = toy(eff=self.eff, sfact=True, bfact=self.bfact)
+    t.generate( size=self.events, fname=fname )
+
   def readData(self):
     bname = 'fact' if self.bfact else 'nonfact'
     self.toyfname = 'toys/toy_e{0}_b{1}_{2}.pkl'.format(self.eff,bname,self.events)
+    if self.regen: self.regenerate(self.toyfname)
     #print('Reading data toy from', toyfname)
     if not os.path.exists(self.toyfname):
-      raise RuntimeError('No file here', self.toyfname)
+      print('No file here', self.toyfname,'so generating one')
+      self.regenerate(self.toyfname)
     self.data = pd.read_pickle( self.toyfname )
 
   # nll function for weighted data

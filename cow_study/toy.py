@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 class toy():
-  def __init__(self, eff=None, sfact=True, bfact=True):
+  def __init__(self, eff=None, sfact=True, bfact=True, pars={}):
     if not sfact: raise RuntimeError('Must have factorising signal')
     self.eff = eff or 1
     if eff == 'flat' or eff == 'uniform': self.eff = 1
@@ -18,6 +18,7 @@ class toy():
     self.bfact = bfact
     self.mrange = (5000,5600)
     self.trange = (0,10)
+    # default parameters
     self.pars = {
         'g0mu': 5280,
         'g0sg': 30,
@@ -30,6 +31,10 @@ class toy():
         'g1sg': 600,
         'g1rh': -0.2
         }
+    # update defaults
+    for par, val in pars.items():
+      if par in self.pars.keys(): self.pars[par] = val
+
     self._fmt = lambda m, t, so, bo: self.fmtbase(m,t,so,bo)
     self._ftm = lambda t, m, so, bo: self.fmtbase(m,t,so,bo)
     self._fm = lambda m, so, bo: quad( self._ftm, *self.trange, args=(m,so,bo) )[0]
