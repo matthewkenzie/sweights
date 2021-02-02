@@ -202,8 +202,8 @@ mBN = nbkg*(mrange[1]-mrange[0])/mbins
 mSN = nsig*(mrange[1]-mrange[0])/mbins
 ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko' )
 #ax[0].plot(m, smpdf.pdf(m), label='S pdf' )
-#for tval in np.linspace(*trange,3):
-  #ax[0].plot(m, bpdf.pdf(m,tval,mproj=True), label=f'B t={tval}' )
+for tval in np.linspace(*trange,3):
+  ax[0].plot(m, mBN*bpdf.pdf(m,tval,mproj=True), label=f'B t={tval}' )
 ax[0].plot(m, mBN*bpdf.pdfm(m), 'r--', label='B pdf')
 ax[0].plot(m, mBN*bpdf.pdfm(m)+mSN*smpdf.pdf(m), 'b-', label='S+B pdf')
 
@@ -215,8 +215,8 @@ tBN = nbkg*(trange[1]-trange[0])/tbins
 tSN = nsig*(trange[1]-trange[0])/tbins
 ax[1].errorbar( thc, thw, thw**0.5, fmt='ko' )
 #ax[1].plot(t, stpdf.pdf(t), label='S pdf' )
-#for mval in np.linspace(*mrange,3):
-  #ax[1].plot(t, bpdf.pdf(mval,t,tproj=True), label=f'B m={mval}')
+for mval in np.linspace(*mrange,3):
+  ax[1].plot(t, tBN*bpdf.pdf(mval,t,tproj=True), label=f'B m={mval}')
 ax[1].plot(t, tBN*bpdf.pdft(t), 'r--', label='B pdf')
 ax[1].plot(t, tBN*bpdf.pdft(t)+tSN*stpdf.pdf(t), 'b-', label='S+B pdf')
 ax[1].legend()
