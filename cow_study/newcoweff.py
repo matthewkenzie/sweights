@@ -1,7 +1,16 @@
+from argparse import ArgumentParser
+parser = ArgumentParser()
+parser.add_argument('-t','--ntoys', default=0, type=int, help='Run this number of toys')
+parser.add_argument('-s','--nsig' , default=1000, type=int, help='Signal evs per toy')
+parser.add_argument('-b','--nbkg' , default=1000, type=int, help='Background evs per toy')
+parser.add_argument('-p','--poiss', default=False, action="store_true", help='Poisson flucutate evs in toys')
+opts = parser.parse_args()
+
 import numpy as np
 import matplotlib.pyplot as plt
 import time
 import os
+import sys
 import pickle
 
 from scipy.integrate import quad, nquad
@@ -170,7 +179,7 @@ class bkgweffmodel:
 
     vals = np.empty((size,2))
     ngen = 0
-    if progress: bar = tqdm(total=size)
+    if progress: bar = tqdm(desc='Generating Background', total=size)
     while ngen < size:
       accept = False
       m = None
@@ -186,9 +195,10 @@ class bkgweffmodel:
         if h<p: accept=True
 
       vals[ngen] = (m,t)
-      bar.update()
+      if progress: bar.update()
       ngen += 1
 
+    if progress: bar.close()
     if save is not None:
       np.save(f'{save}',vals)
 
@@ -325,7 +335,7 @@ class sigweffmodel:
 
     vals = np.empty((size,2))
     ngen = 0
-    if progress: bar = tqdm(total=size)
+    if progress: bar = tqdm(desc='Generating Signal    ', total=size)
     while ngen < size:
       accept = False
       m = None
@@ -337,9 +347,10 @@ class sigweffmodel:
         if h < self.eff(m,t): accept=True
 
       vals[ngen] = (m,t)
-      bar.update()
+      if progress: bar.update()
       ngen += 1
 
+    if progress: bar.close()
     if save is not None:
       np.save(f'{save}',vals)
 
@@ -384,8 +395,13 @@ fig, ax = plt.subplots(1,2,figsize=(16,6))
 spdf = sigweffmodel(mrange,trange,mmu,msg,tlb,0.5,0.2,-0.05,cache='load')
 bpdf = bkgweffmodel(mrange,trange,mlb,tmu,tsg,slb,smu,ssg,0.5,0.2,-0.05,cache='load')
 
-nbkg = 1000
-nsig = 800
+if opts.ntoys>0:
+  for nt in range(opts.ntoys):
+    print('Generating Toy', nt, '/', opts.ntoys )
+    bkg_vals = bpdf.generate(size=opts.nbkg, seed=nt     , save='toys/nceffb_s%d_t%d.npy'%(opts.nbkg,nt))
+    sig_vals = spdf.generate(size=opts.nsig, seed=1000+nt, save='toys/nceffs_s%d_t%d.npy'%(opts.nsig,nt))
+  sys.exit('Generating Done.')
+
 #bkg_vals = bpdf.generate(nbkg,save='toys/newcoweffbkg.npy')
 #sig_vals = spdf.generate(nsig,save='toys/newcoweffsig.npy')
 bkg_vals = np.load('toys/newcoweffbkg.npy')
