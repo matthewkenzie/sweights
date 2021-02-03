@@ -150,9 +150,7 @@ class bkgmodel:
 
     return vals
 
-def gensignal( smpdf, stpdf, size=1, save=None, seed=None ):
-  if progress is None:
-    progress = False if size<10 else True
+def genfactorising( smpdf, stpdf, size=1, save=None, seed=None ):
 
   if seed is not None:
     np.random.seed(seed)
@@ -184,14 +182,19 @@ fig, ax = plt.subplots(1,2,figsize=(16,6))
 # pdfs
 smpdf = mynorm(*mrange,mmu, msg)
 stpdf = myexp(*trange,tlb)
+bmpdf = myexp(*mrange,mlb)
+btpdf = mynorm(*trange,tmu,tsg)
 bpdf = bkgmodel(mrange,trange,mlb,tmu,tsg,slb,smu,ssg,cache='load')
 
 nbkg = 1000
 nsig = 800
+#bkg_vals = genfactorising(bmpdf,btpdf,nbkg,save='toys/newcowfactbkg.npy')
 #bkg_vals = bpdf.generate(nbkg,save='toys/newcowbkg.npy')
-#sig_vals = gensignal(smpdf,stpdf,nsig,save='toys/newcowsig.npy')
+#sig_vals = genfactorising(smpdf,stpdf,nsig,save='toys/newcowsig.npy')
 bkg_vals = np.load('toys/newcowbkg.npy')
 sig_vals = np.load('toys/newcowsig.npy')
+nbkg = len(bkg_vals)
+nsig = len(sig_vals)
 toy_vals = np.concatenate((bkg_vals,sig_vals))
 mhc, mhw = hist(toy_vals[:,0], range=mrange, bins=mbins)
 thc, thw = hist(toy_vals[:,1], range=trange, bins=tbins)
@@ -200,25 +203,30 @@ thc, thw = hist(toy_vals[:,1], range=trange, bins=tbins)
 m = np.linspace(*mrange,200)
 mBN = nbkg*(mrange[1]-mrange[0])/mbins
 mSN = nsig*(mrange[1]-mrange[0])/mbins
-ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko' )
-#ax[0].plot(m, smpdf.pdf(m), label='S pdf' )
-#for tval in np.linspace(*trange,3):
-  #ax[0].plot(m, mBN*bpdf.pdf(m,tval,mproj=True), label=f'B t={tval}' )
-ax[0].plot(m, mBN*bpdf.pdfm(m), 'r--', label='B pdf')
-ax[0].plot(m, mBN*bpdf.pdfm(m)+mSN*smpdf.pdf(m), 'b-', label='S+B pdf')
+ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko', label='Toy Data' )
+ax[0].plot(m, mSN*smpdf.pdf(m), 'g--', label='True S pdf' )
+for tval in np.linspace(*trange,3):
+  ax[0].plot(m, mBN*bpdf.pdf(m,tval,mproj=True), ls=':', label=f'B t={tval}' )
+ax[0].plot(m, mBN*bpdf.pdfm(m), 'r--', label='True B pdf')
+ax[0].plot(m, mBN*bpdf.pdfm(m)+mSN*smpdf.pdf(m), 'b-', label='True S+B pdf')
 
+ax[0].set_xlabel('Mass [GeV]')
+ax[0].set_ylabel('Events')
 ax[0].legend()
 
 # t plot
 t = np.linspace(*trange,200)
 tBN = nbkg*(trange[1]-trange[0])/tbins
 tSN = nsig*(trange[1]-trange[0])/tbins
-ax[1].errorbar( thc, thw, thw**0.5, fmt='ko' )
-ax[1].plot(t, stpdf.pdf(t), label='S pdf' )
-#for mval in np.linspace(*mrange,3):
-  #ax[1].plot(t, tBN*bpdf.pdf(mval,t,tproj=True), label=f'B m={mval}')
-ax[1].plot(t, tBN*bpdf.pdft(t), 'r--', label='B pdf')
-ax[1].plot(t, tBN*bpdf.pdft(t)+tSN*stpdf.pdf(t), 'b-', label='S+B pdf')
+ax[1].errorbar( thc, thw, thw**0.5, fmt='ko', label='Toy Data' )
+ax[1].plot(t, tSN*stpdf.pdf(t), 'g--', label='True S pdf' )
+for mval in np.linspace(*mrange,3):
+  ax[1].plot(t, tBN*bpdf.pdf(mval,t,tproj=True), ls=':', label=f'B m={mval}')
+ax[1].plot(t, tBN*bpdf.pdft(t), 'r--', label='True B pdf')
+ax[1].plot(t, tBN*bpdf.pdft(t)+tSN*stpdf.pdf(t), 'b-', label='True S+B pdf')
+
+ax[1].set_xlabel('Time [ps]')
+ax[1].set_ylabel('Events')
 ax[1].legend()
 #ax[1].set_yscale('log')
 fig.tight_layout()

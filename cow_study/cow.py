@@ -20,11 +20,12 @@ class cow():
     self.Im = Im
     self.obs = obs
     if obs:
-      if len(obs)!=2: raise ValueError('The observation must be passed as length two object containing weights and bin edges (w,xe) - ie. what is return by np.histogram()')
+      if len(obs)!=2: raise ValueError('The observation must be passed as length two object containing weights and bin edges (w,xe) - ie. what is returned by np.histogram()')
       w, xe = obs
       if len(w)!=len(xe)-1: raise ValueError('The bin edges and weights do not have the right respective dimensions')
       # normalise
-      w = w/np.sum(w)
+      w = w/np.sum(w)  # sum of wts now 1
+      w /= (mrange[1]-mrange[0])/len(w) # now divide by bin width to get a function which integrates to 1
       f = lambda m: w[ np.argmin( m >= xe )-1 ]
       self.Im = np.vectorize(f)
     if self.Im == 1:
@@ -32,7 +33,16 @@ class cow():
       n  = np.diff( un.cdf(mrange) )
       self.Im = lambda m: un.pdf(m) / n
 
-  def WklElem(self, k, l):
+    # compute Wkl matrix
+    self.Wkl = self.compWkl()
+    print('Found Wkl Matrix:')
+    print( '\t', str(self.Wkl).replace('\n','\n\t ') )
+    # invert for Akl matrix
+    self.Akl = linalg.solve( self.Wkl, np.identity( len(self.Wkl) ), assume_a='pos' )
+    print('Found Akl Matrix:')
+    print( '\t', str(self.Akl).replace('\n','\n\t ') )
+
+  def compWklElem(self, k, l):
     # check it's available in m
     assert( k < len(self.gk) )
     assert( l < len(self.gk) )
@@ -49,31 +59,22 @@ class cow():
         tint += quad( integral, le, he )[0]
       return tint
 
-  def Wkl(self):
+  def compWkl(self):
 
     n = len(self.gk)
 
     ret = np.identity(n)
 
     for i in range(n):
-      for j in range(i,n):
-        ret[i,j] = self.WklElem(i,j)
+      for j in range(n):
+        if i>j: ret[i,j] = ret[j,i]
+        else:   ret[i,j] = self.compWklElem(i,j)
 
-    # symmetrise and cache
-    self._Wkl = ret + ret.T - np.diag( ret.diagonal() )
-    return self._Wkl
+    return ret
 
-  def Akl(self, use_cache=False):
-    if not use_cache: self.Wkl()
-    self._Akl = linalg.inv( self._Wkl )
-    return self._Akl
-
-  def wk(self, k, m, use_cache=True):
-    if not use_cache or not hasattr(self,'_Akl'): self.Akl()
-
+  def wk(self, k, m):
     n = len(self.gk)
-
-    return np.sum( [ self._Akl[k,l] * self.gk[l](m) / self.Im(m) for l in range(n) ], axis=0 )
+    return np.sum( [ self.Akl[k,l] * self.gk[l](m) / self.Im(m) for l in range(n) ], axis=0 )
 
 
 
