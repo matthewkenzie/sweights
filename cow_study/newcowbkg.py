@@ -200,10 +200,8 @@ thc, thw = hist(toy_vals[:,1], range=trange, bins=tbins)
 m = np.linspace(*mrange,200)
 mBN = nbkg*(mrange[1]-mrange[0])/mbins
 mSN = nsig*(mrange[1]-mrange[0])/mbins
-mBN = 1
-mSN = 1
-#ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko' )
-ax[0].plot(m, smpdf.pdf(m), label='S pdf' )
+ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko' )
+#ax[0].plot(m, smpdf.pdf(m), label='S pdf' )
 #for tval in np.linspace(*trange,3):
   #ax[0].plot(m, mBN*bpdf.pdf(m,tval,mproj=True), label=f'B t={tval}' )
 ax[0].plot(m, mBN*bpdf.pdfm(m), 'r--', label='B pdf')
@@ -215,16 +213,14 @@ ax[0].legend()
 t = np.linspace(*trange,200)
 tBN = nbkg*(trange[1]-trange[0])/tbins
 tSN = nsig*(trange[1]-trange[0])/tbins
-tBN = 1
-tSN = 1
-#ax[1].errorbar( thc, thw, thw**0.5, fmt='ko' )
+ax[1].errorbar( thc, thw, thw**0.5, fmt='ko' )
 ax[1].plot(t, stpdf.pdf(t), label='S pdf' )
 #for mval in np.linspace(*mrange,3):
   #ax[1].plot(t, tBN*bpdf.pdf(mval,t,tproj=True), label=f'B m={mval}')
 ax[1].plot(t, tBN*bpdf.pdft(t), 'r--', label='B pdf')
 ax[1].plot(t, tBN*bpdf.pdft(t)+tSN*stpdf.pdf(t), 'b-', label='S+B pdf')
 ax[1].legend()
-ax[1].set_yscale('log')
+#ax[1].set_yscale('log')
 fig.tight_layout()
 fig.savefig('plots/newcowbkg.pdf')
 
@@ -232,6 +228,7 @@ fig.savefig('plots/newcowbkg.pdf')
 fig, ax = plt.subplots(1,1,figsize=(8,6))
 x,y = np.meshgrid(m,t)
 ax.contourf(x,y,bpdf.pdf(x,y))
+fig.tight_layout()
 
 #print( quad( bpdf.pdfm, *mrange ) )
 #print( quad( bpdf.pdft, *trange ) )

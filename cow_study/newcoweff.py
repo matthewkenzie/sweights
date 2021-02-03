@@ -232,12 +232,12 @@ fig, ax = plt.subplots(1,2,figsize=(16,6))
 # pdfs
 smpdf = mynorm(*mrange,mmu, msg)
 stpdf = myexp(*trange,tlb)
-#bpdf = bkgweffmodel(mrange,trange,mlb,tmu,tsg,slb,smu,ssg,0.5,0.2,-0.05,cache='load')
-bpdf = bkgweffmodel(mrange,trange,mlb,tmu,tsg,slb,smu,ssg,0.5,0.2,-0.05,cache=400)
+bpdf = bkgweffmodel(mrange,trange,mlb,tmu,tsg,slb,smu,ssg,0.5,0.2,-0.05,cache='load')
+#bpdf = bkgweffmodel(mrange,trange,mlb,tmu,tsg,slb,smu,ssg,0.5,0.2,-0.05,cache=400)
 
 nbkg = 1000
 nsig = 800
-bkg_vals = bpdf.generate(nbkg,save='toys/newcoweffbkg.npy')
+#bkg_vals = bpdf.generate(nbkg,save='toys/newcoweffbkg.npy')
 #sig_vals = gensignal(smpdf,stpdf,nsig,save='toys/newcowsig.npy')
 bkg_vals = np.load('toys/newcoweffbkg.npy')
 sig_vals = np.load('toys/newcowsig.npy')
@@ -253,6 +253,8 @@ m = np.linspace(*mrange,200)
 #mSN = 1
 mBN = nbkg*(mrange[1]-mrange[0])/mbins
 mSN = nsig*(mrange[1]-mrange[0])/mbins
+meff = bpdf.effm(m)
+meff = meff*140/np.max(meff)
 #ax[0].plot(m, bpdf.effm(m))
 ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko' )
 #ax[0].plot(m, mBN*smpdf.pdf(m), label='S pdf' )
@@ -260,6 +262,7 @@ ax[0].errorbar( mhc, mhw, mhw**0.5, fmt='ko' )
   #ax[0].plot(m, mBN*bpdf.pdf(m,tval,mproj=True), label=f'B t={tval}' )
 ax[0].plot(m, mBN*bpdf.pdfm(m), 'r--', label='B pdf')
 ax[0].plot(m, mBN*bpdf.pdfm(m)+mSN*smpdf.pdf(m), 'b-', label='S+B pdf')
+ax[0].plot(m, meff, 'k:', label='Efficiency')
 
 
 ax[0].legend()
@@ -270,6 +273,8 @@ t = np.linspace(*trange,200)
 #tSN = 1
 tBN = nbkg*(trange[1]-trange[0])/tbins
 tSN = nsig*(trange[1]-trange[0])/tbins
+teff = bpdf.efft(t)
+teff = teff*140/np.max(teff)
 #ax[1].plot(t, bpdf.efft(t))
 ax[1].errorbar( thc, thw, thw**0.5, fmt='ko' )
 #ax[1].plot(t, tSN*stpdf.pdf(t), label='S pdf' )
@@ -277,6 +282,7 @@ ax[1].errorbar( thc, thw, thw**0.5, fmt='ko' )
   #ax[1].plot(t, tBN*bpdf.pdf(mval,t,tproj=True), label=f'B m={mval}')
 ax[1].plot(t, tBN*bpdf.pdft(t), 'r--', label='B pdf')
 ax[1].plot(t, tBN*bpdf.pdft(t)+tSN*stpdf.pdf(t), 'b-', label='S+B pdf')
+ax[1].plot(t, teff, 'k:', label='Efficiency')
 ax[1].legend()
 #ax[1].set_yscale('log')
 fig.tight_layout()
@@ -290,18 +296,7 @@ fig.colorbar(cb1,ax=ax[0])
 cb2 = ax[1].contourf(x,y,bpdf.pdf(x,y))
 fig.colorbar(cb2,ax=ax[1])
 fig.tight_layout()
-
-# eff
-fig, ax = plt.subplots(1,2,figsize=(16,6))
-ax[0].plot(m, bpdf.effm(m) )
-for tval in np.linspace(*trange,3):
-  ax[0].plot(m, bpdf.eff(m,tval), label=f'eff t={tval}' )
-ax[0].set_ylim( (0, ax[0].get_ylim()[1] ) )
-ax[1].plot(t, bpdf.efft(t) )
-for mval in np.linspace(*mrange,3):
-  ax[1].plot(t, bpdf.eff(mval,t), label=f'eff m={mval}')
-ax[1].set_ylim( (0, ax[1].get_ylim()[1] ) )
-fig.tight_layout()
+fig.savefig('plots/newcoweff2d.pdf')
 
 #print( quad( bpdf.pdfm, *mrange ) )
 #print( quad( bpdf.pdft, *trange ) )
