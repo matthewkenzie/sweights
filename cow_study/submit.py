@@ -3,7 +3,7 @@ import os
 from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument('--sm', choices=['sig','sigweff'], help='Signal toy')
-parser.add_argument('--bm', choices=['bkg','bkgweff','bkgnf','bkgnfeff'], help='Background toy')
+parser.add_argument('--bm', choices=['bkg','bkgweff','bkgnf','bkgnfweff'], help='Background toy')
 parser.add_argument('--sN', type=int, help='Signal events')
 parser.add_argument('--bN', type=int, help='Background events')
 parser.add_argument('-n','--ntoys', type=int, help='Number of toys')
