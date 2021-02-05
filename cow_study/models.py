@@ -16,6 +16,7 @@
 import os
 import pickle
 import numpy as np
+from tqdm import tqdm
 
 from scipy.stats import truncnorm, truncexpon
 from scipy.interpolate import interp1d
@@ -31,6 +32,9 @@ def mynorm(xmin,xmax,mu,sg):
 
 def myexp(xmin,xmax,lb):
   return truncexpon( (xmax-xmin)/lb, xmin, lb )
+
+def mypol(xmin,xmax,po):
+  return lambda x: (po+1)*(1-(x-xmin)/(xmax-xmin))**po / (xmax-xmin)
 
 # abstract base class for models (can do some cacheing etc)
 class model:
@@ -148,8 +152,8 @@ class effmodel(model):
     # and scale to the max
     self.emmax = 1
     self.etmax = 1
-    self.emmax = self._effm(mrange[1])
-    self.etmax = self._efft(trange[1])
+    self.emmax = self._effm(self.mrange[1])
+    self.etmax = self._efft(self.trange[1])
     self.effm = np.vectorize(self._effm)
     self.efft = np.vectorize(self._efft)
 
@@ -174,7 +178,7 @@ class effmodel(model):
     # function
     f = ascl * ( 10*tpos - self.dx ) ** ascl
 
-    # scale it so that the max is 1 which happens at trange[1], mrange[1]
+    # scale it so that the max is 1 which happens at mpos=1, tpos=1
     mx = (self.a * (1+self.b) ) * ( 10 - self.dx ) ** (self.a * (1+self.b))
 
     # return
@@ -195,11 +199,11 @@ class effmodel(model):
 
   def _pdfm(self,m):
     f = lambda t: self.pdf(m,t)
-    return quad(f,*trange)[0]
+    return quad(f,*self.trange)[0]
 
   def _pdft(self,t):
     f = lambda m: self.pdf(m,t)
-    return quad(f,*mrange)[0]
+    return quad(f,*self.mrange)[0]
 
 class sigmodel(model):
   def __init__(self, mrange, trange, mu, sg, lb, cache=None):
@@ -219,23 +223,35 @@ class sigmodel(model):
     self.tpdf = myexp(*self.trange, self.lb)
 
     # can directly make the pdf functions too
-    self.pdf = lambda m,t: self.mpdf.pdf(m) * self.tpdf(t)
+    self.pdf = lambda m,t: self.mpdf.pdf(m) * self.tpdf.pdf(t)
     self.pdfm = lambda m: self.mpdf.pdf(m)
     self.pdft = lambda t: self.tpdf.pdf(t)
 
-    # need to implement eff proj functions but they are unity
+    # need to implement eff functions but they are unity
+    self._effmt = lambda m,t: 1
+    self.effmt = np.vectorize(self._effmt)
     self.effm = lambda m: np.ones_like(m)
     self.efft = lambda t: np.ones_like(t)
 
     # call cache from parent
     self.cacheing()
 
-  def generate(self, size=1, save=None, seed=None):
+  def generate(self, size=1, progress=None, save=None, seed=None):
+
+    if progress is None:
+      progress = False if size<10 else True
 
     if seed is not None:
       np.random.seed(seed)
 
+    if progress: bar = tqdm(desc='Generating toy', total=size)
+
     vals =  np.column_stack( (self.mpdf.rvs(size=size), self.tpdf.rvs(size=size) ) )
+
+    if progress:
+      bar.update(size)
+      bar.close()
+
     if save is not None:
       np.save(f'{save}',vals)
     else:
@@ -264,6 +280,7 @@ class sigweffmodel(model):
     # now make the eff map
     self.eff  = effmodel(self.mrange, self.trange, self.ea, self.eb, self.ed, ecache)
     # and implement the eff proj functions
+    self.effmt = self.eff.eff
     self.effm = self.eff.effm
     self.efft = self.eff.efft
 
@@ -287,11 +304,11 @@ class sigweffmodel(model):
 
   def _pdfm(self,m):
     f = lambda t: self.pdf(m,t)
-    return quad(f,*trange)[0]
+    return quad(f,*self.trange)[0]
 
   def _pdft(self,t):
     f = lambda m: self.pdf(m,t)
-    return quad(f,*mrange)[0]
+    return quad(f,*self.mrange)[0]
 
   def generate(self, size=1, progress=None, save=None, seed=None):
 
@@ -344,23 +361,35 @@ class bkgmodel(model):
     self.tpdf = mynorm(*self.trange, self.mu, self.sg)
 
     # can directly make the pdf functions too
-    self.pdf = lambda m,t: self.mpdf.pdf(m) * self.tpdf(t)
+    self.pdf = lambda m,t: self.mpdf.pdf(m) * self.tpdf.pdf(t)
     self.pdfm = lambda m: self.mpdf.pdf(m)
     self.pdft = lambda t: self.tpdf.pdf(t)
 
-    # need to implement eff proj functions but they are unity
+    # need to implement eff functions but they are unity
+    self._effmt = lambda m,t: 1
+    self.effmt = np.vectorize(self._effmt)
     self.effm = lambda m: np.ones_like(m)
     self.efft = lambda t: np.ones_like(t)
 
     # call cache from parent
     self.cacheing()
 
-  def generate(self, size=1, save=None, seed=None):
+  def generate(self, size=1, progress=None, save=None, seed=None):
+
+    if progress is None:
+      progress = False if size<10 else True
 
     if seed is not None:
       np.random.seed(seed)
 
+    if progress: bar = tqdm(desc='Generating toy', total=size)
+
     vals =  np.column_stack( (self.mpdf.rvs(size=size), self.tpdf.rvs(size=size) ) )
+
+    if progress:
+      bar.update(size)
+      bar.close()
+
     if save is not None:
       np.save(f'{save}',vals)
     else:
@@ -398,7 +427,9 @@ class bkgnfmodel(model):
     self.pdfm   = np.vectorize(self._pdfm)
     self.pdft   = np.vectorize(self._pdft)
 
-    # need to implement eff proj functions but they are unity
+    # need to implement eff functions but they are unity
+    self._effmt = lambda m,t: 1
+    self.effmt = np.vectorize(self._effmt)
     self.effm = lambda m: np.ones_like(m)
     self.efft = lambda t: np.ones_like(t)
 
@@ -425,11 +456,11 @@ class bkgnfmodel(model):
 
   def _pdfm(self,m):
     f = lambda t: self.pdf(m,t)
-    return quad(f,*trange)[0]
+    return quad(f,*self.trange)[0]
 
   def _pdft(self,t):
     f = lambda m: self.pdf(m,t)
-    return quad(f,*mrange)[0]
+    return quad(f,*self.mrange)[0]
 
   def generate(self, size=1, progress=None, save=None, seed=None):
 
@@ -449,8 +480,8 @@ class bkgnfmodel(model):
       m = None
       t = None
       while not accept:
-        m = np.random.uniform(*mrange)
-        t = np.random.uniform(*trange)
+        m = np.random.uniform(*self.mrange)
+        t = np.random.uniform(*self.trange)
         p = self.pdf(m,t)
         if p>self.maj:
           print('Warning found p(m,t) =', p, 'at', m, ',', t, 'is larger than majorant', self.maj, '. Having to update the majorant')
@@ -491,6 +522,7 @@ class bkgweffmodel(model):
     # now make the eff map
     self.eff  = effmodel(self.mrange, self.trange, self.ea, self.eb, self.ed, ecache)
     # and implement the eff proj functions
+    self.effmt = self.eff.eff
     self.effm = self.eff.effm
     self.efft = self.eff.efft
 
@@ -515,11 +547,11 @@ class bkgweffmodel(model):
 
   def _pdfm(self,m):
     f = lambda t: self.pdf(m,t)
-    return quad(f,*trange)[0]
+    return quad(f,*self.trange)[0]
 
   def _pdft(self,t):
     f = lambda m: self.pdf(m,t)
-    return quad(f,*mrange)[0]
+    return quad(f,*self.mrange)[0]
 
   def generate(self, size=1, progress=None, save=None, seed=None):
 
@@ -576,6 +608,7 @@ class bkgnfweffmodel(model):
     # now make the eff map
     self.eff  = effmodel(self.mrange, self.trange, self.ea, self.eb, self.ed, ecache)
     # and implement the eff proj functions
+    self.effmt = self.eff.eff
     self.effm = self.eff.effm
     self.efft = self.eff.efft
 
@@ -621,11 +654,11 @@ class bkgnfweffmodel(model):
 
   def _pdfm(self,m):
     f = lambda t: self.pdf(m,t)
-    return quad(f,*trange)[0]
+    return quad(f,*self.trange)[0]
 
   def _pdft(self,t):
     f = lambda m: self.pdf(m,t)
-    return quad(f,*mrange)[0]
+    return quad(f,*self.mrange)[0]
 
   def generate(self, size=1, progress=None, save=None, seed=None):
 
@@ -645,8 +678,8 @@ class bkgnfweffmodel(model):
       m = None
       t = None
       while not accept:
-        m = np.random.uniform(*mrange)
-        t = np.random.uniform(*trange)
+        m = np.random.uniform(*self.mrange)
+        t = np.random.uniform(*self.trange)
         p = self.pdf(m,t)
         if p>self.maj:
           print('Warning found p(m,t) =', p, 'at', m, ',', t, 'is larger than majorant', self.maj, '. Having to update the majorant')

@@ -43,3 +43,12 @@ def plot_pull(vals, ax=None, bins=25, range=None):
   ax.text( 0.7, 0.7, r'$\sigma = {:.2f} \pm {:.2f}$'.format(sdev,serr), transform=ax.transAxes)
 
   return (mean,merr),(sdev,serr)
+
+def hist(vals, range=None, bins=25, weights=None):
+  w, xe = np.histogram(vals, range=range, bins=bins, weights=weights)
+  cx = 0.5 * (xe[1:] + xe[:-1])
+  if weights is not None:
+    w2, xe = np.histogram(vals, range=range, bins=bins, weights=weights**2)
+    return cx, w, w2
+  return cx, w
+

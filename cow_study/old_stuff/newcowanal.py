@@ -4,88 +4,96 @@ sys.path.append("/Users/matt/Scratch/stats/sweights")
 
 from argparse import ArgumentParser
 parser = ArgumentParser()
-parser.add_argument('-s','--sfile'  , help='Signal toy file')
-parser.add_argument('-b','--bfile'  , help='Background toy file')
-parser.add_argument('-o','--oname'  , default='cow', help='Output file name')
+parser.add_argument('-t','--toyn'   , default=0    , type=int           , help='Toy number')
+parser.add_argument('-n','--nevs'   , default=1000 , type=int           , help='Events per toy')
+parser.add_argument('-b','--bfact'  , default=False, action="store_true", help='Use factorising background truth model' )
 parser.add_argument('-e','--eff'    , default=False, action="store_true", help='Include efficiency effects' )
 parser.add_argument('-c','--cow'    , default=False, action="store_true", help='Use COWs')
-parser.add_argument('-S','--gs'     , default=0    , type=int           , help='Use of gs(m) [0: truth, 1: crazy, 3: obs/eff]', choices=[0,1,3])
-parser.add_argument('-B','--gb'     , default=0    , type=int           , help='Use of gb(m) [0: truth, 1: crazy, 2: reasonable]', choices=[0,1,2])
+parser.add_argument('-S','--gs'     , default=0    , type=int           , help='Use of gs(m) [0: truth, 1: crazy, 3: obs/eff]')
+parser.add_argument('-B','--gb'     , default=0    , type=int           , help='Use of gb(m) [0: truth, 1: crazy, 2: reasonable]')
 parser.add_argument('-p','--bpol'   , default=-1   , type=int           , help='Use background polynomials with of this order')
-parser.add_argument('-I','--Im'     , default=1    , type=int           , help='Function for I(m) [1: flat, 2: truth, 3: obs/eff2]', choices=[1,2,3])
-parser.add_argument('-q','--batch'  , default=False, action="store_true", help='Run in batch mode. Will not make plots. Will supress output.')
+parser.add_argument('-I','--Im'     , default=1    , type=int           , help='Function for I(m) [1: flat, 2: truth, 3: obs/eff2]')
+parser.add_argument('-P','--noplots', default=False, action="store_true", help='Don\'t make plots')
 opts = parser.parse_args()
 
-if opts.batch:
-  f = open(os.devnull, 'w')
-  sys.stdout = f
+# make a unique string for output files so we know what we did
+uid_str = 'cowan'
+if opts.toyn<0 and opts.bfact: uid_str += '_bf'
+if opts.eff: uid_str += '_eff'
+if opts.cow:
+  uid_str += '_cow'
+  uid_str += '_gs%d'%opts.gs
+  if opts.bpol>=0: uid_str += '_bp%d'%opts.bpol
+  else: uid_str += '_gb%d'%opts.gb
+  uid_str += '_I%d'%opts.Im
+else:
+  uid_str += '_swc'
 
-def polstr(n):
-  res = ''
-  for i in range(n+1):
-    if i==0: res += '1'
-    elif i==1: res += ', x'
-    else: res += ', x**%d'%i
-  return res
+print('Running COW analysis with UID', uid_str)
 
-def printopts(opts, file=sys.stdout):
-  if file != sys.stdout:
-    print('Run Info:', file=file)
-  if opts.cow:
-    print(' - S toy:', opts.sfile, file=file)
-    print(' - B toy:', opts.bfile, file=file)
-    print(' - Using COW formalism', file=file)
-    if opts.gs==0: print('   - gs(m) = truth:    gaus(5280,30)', file=file)
-    if opts.gs==1: print('   - gs(m) = crazy:    gaus(5200,50)', file=file)
-    if opts.gs==3: print('   - gs(m) = obs/eff:  p(m)', file=file)
-    if opts.bpol>=0:
-      print('   - gb(m) = pol%d:     [%s]'%(opts.bpol,polstr(opts.bpol)), file=file)
-    else:
-      if opts.gb==0: print('   - gb(m) = truth:    expo(400)', file=file)
-      if opts.gb==1: print('   - gb(m) = crazy:    expo(50)', file=file)
-      if opts.gb==2: print('   - gb(m) = reas:     expo(180)', file=file)
-    if opts.Im==1: print('   - I(m)  = flat:     1', file=file)
-    if opts.Im==2: print('   - I(m)  = truth:    z*gaus(5280,30) + (1-z)*expo(400)', file=file)
-    if opts.Im==3: print('   - I(m)  = obs/eff2: q(m)', file=file)
-  else:
-    print(' - Using SWeights formalism', file=file)
-  if opts.eff:
-    print(' - Including efficiency weight', file=file)
-
-print('Running analysis')
-if not opts.batch:
-  printopts(opts)
-  os.system('mkdir -p plots/%s'%os.path.dirname(opts.oname))
-os.system('mkdir -p res/%s'%os.path.dirname(opts.oname))
-opts.oname = os.path.splitext(opts.oname)[0]
+plotdir = 'plots/' + uid_str
+os.system('mkdir -p %s'%plotdir)
+os.system('mkdir -p res')
+outfname = 'res/' + uid_str + '_n%d_t%d'%(opts.nevs,opts.toyn) + '.log'
 
 import numpy as np
 from scipy.stats import truncnorm, truncexpon
 from scipy.integrate import quad
 from iminuit import Minuit
 import matplotlib.pyplot as plt
-from models import mynorm, myexp, mypol, effmodel
 from SWeighter import SWeight
 from CovarianceCorrector import cov_correct
-from utils import hist
 
-# load toys
-assert( os.path.exists( opts.sfile ) )
-assert( os.path.exists( opts.bfile ) )
-bkgtoy = np.load( opts.bfile )
-sigtoy = np.load( opts.sfile )
-nbkg = len(bkgtoy)
-nsig = len(sigtoy)
+def hist(vals, range=None, bins=25, weights=None):
+  w, xe = np.histogram(vals, range=range, bins=bins, weights=weights)
+  if weights is not None:
+    w2, xe = np.histogram(vals, range=range, bins=bins, weights=weights**2)
+  cx = 0.5 * (xe[1:] + xe[:-1])
+  if weights is None: return cx, w
+  return cx, w, w2
+
+def mynorm(xmin,xmax,mu,sg):
+  a, b = (xmin-mu)/sg, (xmax-mu)/sg
+  return truncnorm(a,b,mu,sg)
+
+def myexp(xmin,xmax,lb):
+  return truncexpon( (xmax-xmin)/lb, xmin, lb )
+
+def mypol(xmin,xmax,po):
+  return lambda x: (po+1)*(1-(x-xmin)/(xmax-xmin))**po / (xmax-xmin)
+
+def eff(m,t,mrange,trange,ea=0.5,eb=0.2,el=-0.05):
+  # get m into range 0-1
+  mscl = ( m - mrange[0] ) / ( mrange[1] - mrange[0] )
+  ascl = ea + eb*mscl
+  f     = ascl * ( t - el ) ** ascl
+  # scale it so that the max is 1. which happens at trange[1], mrange[1]
+  mx = (ea+eb) * ( trange[1] - el ) ** (ea+eb)
+  return f/mx
+
+# load toys (no eff)
+if opts.toyn<0:
+  if opts.eff:
+    bkgtoy = np.load('toys/newcoweffbkg.npy')
+    sigtoy = np.load('toys/newcoweffsig.npy')
+  else:
+    if opts.bfact: bkgtoy = np.load('toys/newcowfactbkg.npy')
+    else: bkgtoy = np.load('toys/newcowbkg.npy')
+    sigtoy = np.load('toys/newcowsig.npy')
+else:
+  bkgtfile = 'toys/nceffb_s%d_t%d.npy'%(opts.nevs,opts.toyn)
+  sigtfile = 'toys/nceffs_s%d_t%d.npy'%(opts.nevs,opts.toyn)
+  if not os.path.exists(bkgtfile): raise RuntimeError('No such file at', bkgtfile)
+  if not os.path.exists(sigtfile): raise RuntimeError('No such file at', sigtfile)
+  bkgtoy = np.load(bkgtfile)
+  sigtoy = np.load(sigtfile)
+
 toy = np.concatenate((bkgtoy,sigtoy))
 
 mrange = (5000,5600)
 mbins = 50
 trange = (0,10)
 tbins = 50
-
-# make efficiency model if needed
-if opts.eff:
-  eff = effmodel(mrange,trange,0.2,0.2,-0.15, cache='load')
 
 # do the cow thing
 from cow import cow
@@ -94,7 +102,7 @@ if opts.cow:
   if   opts.gs == 0: gs = lambda m: mynorm(*mrange,5280,30).pdf(m)
   elif opts.gs == 1: gs = lambda m: mynorm(*mrange,5200,50).pdf(m)
   elif opts.gs == 3:
-    w, xe = np.histogram( toy[:,0], range=mrange, bins=mbins, weights=(1/eff(toy[:,0],toy[:,1])) )
+    w, xe = np.histogram( toy[:,0], range=mrange, bins=mbins, weights=(1/eff(toy[:,0],toy[:,1],mrange,trange)) )
     w = w/np.sum(w)
     w /= (mrange[1]-mrange[0])/len(w)
     f = lambda m: w[ np.argmin( m >= xe ) - 1 ]
@@ -114,10 +122,10 @@ if opts.cow:
   trgs = mynorm(*mrange,5280,30)
   trgb = myexp(*mrange,400)
   if   opts.Im==1: Im = 1
-  elif opts.Im==2: Im = lambda m: (nbkg/(nsig+nbkg))*trgb.pdf(m) + (nsig/(nsig+nbkg))*trgs.pdf(m)
+  elif opts.Im==2: Im = lambda m: (1000/1800)*trgb.pdf(m) + (800/1800)*trgs.pdf(m)
   elif opts.Im==3:
     Im = 1
-    if opts.eff: obs = np.histogram( toy[:,0], range=mrange, bins=mbins, weights=(1/eff.eff(toy[:,0],toy[:,1])**2) )
+    if opts.eff: obs = np.histogram( toy[:,0], range=mrange, bins=mbins, weights=(1/eff(toy[:,0],toy[:,1],mrange,trange)**2) )
     else:        obs = np.histogram( toy[:,0], range=mrange, bins=mbins )
   else: raise RuntimeError('This option for Im', opts.Im, 'is not implemented')
 
@@ -126,7 +134,7 @@ if opts.cow:
   sws = cw.wk(0,toy[:,0])
   bws = [ cw.wk(i,toy[:,0]) for i in range(1,len(cw.gk)) ]
 
-  if not opts.batch:
+  if not opts.noplots:
     # plot the functions being used
     fig, ax = plt.subplots(1, 1, figsize=(8,6) )
     ch, wh = hist( toy[:,0], range=mrange, bins=mbins )
@@ -141,7 +149,7 @@ if opts.cow:
     ax.legend()
     ax.set_xlabel('Mass [GeV]')
     fig.tight_layout()
-    fig.savefig('plots/'+opts.oname+'mfunc.pdf')
+    fig.savefig('%s/newcowmfunc.pdf'%plotdir)
 
     # plot weight functions
     fig, ax = plt.subplots(1, 1, figsize=(8,6) )
@@ -159,7 +167,7 @@ if opts.cow:
     ax.set_xlabel('Mass [GeV]')
     ax.set_ylabel('sWeight')
     fig.tight_layout()
-    fig.savefig('plots/'+opts.oname+'wts.pdf')
+    fig.savefig('%s/newcowweights.pdf'%plotdir)
 
 # do the classic sweight thing
 else:
@@ -170,7 +178,7 @@ else:
     bpdf = myexp(*mrange,lb)
     return ns + nb - np.sum(np.log( ns*spdf.pdf(toy[:,0]) + nb*bpdf.pdf(toy[:,0]) ) )
 
-  mi = Minuit(nll,ns=nsig,nb=nbkg,mu=5280,sg=30,lb=400,errordef=Minuit.LIKELIHOOD,pedantic=False)
+  mi = Minuit(nll,ns=0.5*len(toy),nb=0.5*len(toy),mu=5280,sg=30,lb=400,errordef=Minuit.LIKELIHOOD,pedantic=False)
   mi.migrad()
   mi.hesse()
   print(mi.params)
@@ -189,7 +197,7 @@ else:
   s = mN*pdf(m,**mi.values,so=True)
   b = mN*pdf(m,**mi.values,bo=True)
 
-  if not opts.batch:
+  if not opts.noplots:
     fig, ax = plt.subplots(1,1,figsize=(8,6))
     ax.errorbar(mhc, mhw, mhw**0.5, fmt='ko', label='Toy Data')
     ax.plot(m, s, 'g--', label='Fitted S pdf')
@@ -198,7 +206,7 @@ else:
     ax.set_xlabel('Mass [GeV]')
     ax.set_ylabel('Events')
     ax.legend()
-    fig.savefig('plots/'+opts.oname+'mfit.pdf')
+    fig.savefig('%s/newcowmfit.pdf'%plotdir)
     fig.tight_layout()
 
   # now do the classic sweighting
@@ -206,16 +214,16 @@ else:
            myexp(*mrange, mi.values['lb']) ]
   ylds = [ mi.values['ns'], mi.values['nb'] ]
 
-  sw = SWeight( toy[:,0], pdfs=pdfs, yields=ylds, discvarranges=(mrange,), compnames=('sig','bkg'), method='summation' )
+  sw = SWeight( toy[:,0], pdfs=pdfs, yields=ylds, discvarranges=(mrange,), compnames=('sig','bkg'), method='integration' )
 
   # plot it
-  if not opts.batch:
+  if not opts.noplots:
     fig, ax = plt.subplots(1, 1, figsize=(8,6) )
     sw.makeWeightPlot(ax)
     ax.set_xlabel('Mass [GeV]')
     ax.set_ylabel('sWeight')
     fig.tight_layout()
-    fig.savefig('plots/'+opts.oname+'wts.pdf')
+    fig.savefig('%s/newcowweights.pdf'%plotdir)
 
   # save weights
   sws = sw.getWeight(0, toy[:,0])
@@ -223,7 +231,7 @@ else:
 
 ## NOW FIT BACK WITH OUR WEIGHTS FROM WHATEVER METHOD ##
 
-outf = open('res/'+opts.oname+'.log','w')
+outf = open(outfname,'w')
 
 # averages for cow
 if opts.cow:
@@ -242,7 +250,7 @@ else:
 
 # effwts
 if opts.eff:
-  effs = eff.eff(toy[:,0],toy[:,1])
+  effs = eff(toy[:,0],toy[:,1],mrange,trange)
   sws /= effs
   bws = np.sum( [ bw/effs for bw in bws ], axis=0 )
 
@@ -272,8 +280,6 @@ equivev = sum2ws/sumws2
 print('Equivalent Events: {:f}'.format(equivev))
 outf.write('EquivalentEvents: {:f}\n'.format(equivev))
 
-printopts(opts,outf)
-
 outf.close()
 
 # and plot it
@@ -281,7 +287,7 @@ thc, thw, thw2 = hist(toy[:,1], range=trange, bins=tbins, weights=sws)
 t = np.linspace(*trange,200)
 tN = np.sum(sws)*(trange[1]-trange[0])/tbins
 
-if not opts.batch:
+if not opts.noplots:
   fig, ax = plt.subplots(1, 1, figsize=(8,6) )
   ax.errorbar( thc, thw, thw2**0.5, fmt='ko', label='Weighted Toy Data' )
   ax.plot(t, tN*tpdf(4,t), 'r--', label='True PDF')
@@ -292,6 +298,6 @@ if not opts.batch:
   ax.text(0.7,0.75,r'$\left(\sum w\right)^2 / \sum w^2 = {:<6.1f}$'.format(equivev), transform=ax.transAxes)
   ax.legend()
   fig.tight_layout()
-  fig.savefig('plots/'+opts.oname+'tfit.pdf')
+  fig.savefig('%s/newcowtfit.pdf'%plotdir)
 
   plt.show()
